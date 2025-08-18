@@ -18,6 +18,16 @@ export interface ApiError {
   detail: string;
 }
 
+export interface PdfTranslationResponse {
+  success: boolean;
+  filename: string;
+  pages_processed: number;
+  extracted_text: string;
+  translated_text: string;
+  target_language: string;
+  source_language: string;
+}
+
 export class TranslationApiService {
   static async translateText(request: TranslationRequest): Promise<TranslationResponse> {
     try {
@@ -68,6 +78,32 @@ export class TranslationApiService {
     } catch (error) {
       console.error('Failed to fetch supported languages:', error);
       return null;
+    }
+  }
+
+  static async translatePdf(file: File, targetLanguage: string): Promise<PdfTranslationResponse> {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('target_language', targetLanguage);
+
+      const response = await fetch(`${API_BASE_URL}/translate-pdf`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData: ApiError = await response.json();
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+
+      const data: PdfTranslationResponse = await response.json();
+      return data;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`PDF translation failed: ${error.message}`);
+      }
+      throw new Error('PDF translation failed: Unknown error');
     }
   }
 }

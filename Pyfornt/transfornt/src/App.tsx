@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { TranslationForm } from './components/TranslationForm'
-import { TranslationApiService } from './services/translationApi'
+import PdfUpload from './components/PdfUpload'
+import { TranslationApiService, type PdfTranslationResponse } from './services/translationApi'
 
 interface FormData {
   text: string;
@@ -13,6 +14,8 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [isBackendHealthy, setIsBackendHealthy] = useState<boolean | null>(null);
+  const [activeTab, setActiveTab] = useState<'text' | 'pdf'>('text');
+  const [pdfResult, setPdfResult] = useState<PdfTranslationResponse | null>(null);
 
   // Check backend health on component mount
   useEffect(() => {
@@ -36,6 +39,7 @@ export default function App() {
     setIsLoading(true);
     setError('');
     setTranslatedText('');
+    setPdfResult(null);
 
     try {
       const response = await TranslationApiService.translateText({
@@ -52,6 +56,12 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handlePdfTranslation = (result: PdfTranslationResponse) => {
+    setPdfResult(result);
+    setTranslatedText('');
+    setError('');
   };
 
   return (
@@ -95,8 +105,38 @@ export default function App() {
         {/* Main Content */}
         <div className="w-full max-w-6xl mx-auto">
           <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-2xl border border-indigo-50 overflow-hidden">
+            {/* Tab Navigation */}
+            <div className="border-b border-gray-200">
+              <nav className="flex space-x-8 px-8 pt-6">
+                <button
+                  onClick={() => setActiveTab('text')}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'text'
+                      ? 'border-indigo-500 text-indigo-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Text Translation
+                </button>
+                <button
+                  onClick={() => setActiveTab('pdf')}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'pdf'
+                      ? 'border-indigo-500 text-indigo-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  PDF Translation
+                </button>
+              </nav>
+            </div>
+
             <div className="p-8">
-              <TranslationForm onSubmit={handleTranslation} isLoading={isLoading} />
+              {activeTab === 'text' ? (
+                <TranslationForm onSubmit={handleTranslation} isLoading={isLoading} />
+              ) : (
+                <PdfUpload onTranslationComplete={handlePdfTranslation} />
+              )}
               
               {/* Error Display */}
               {error && (

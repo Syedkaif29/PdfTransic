@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -6,6 +6,8 @@ import torch
 import logging
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 from IndicTransToolkit.processor import IndicProcessor
+import PyPDF2
+import io
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -214,6 +216,100 @@ def translate_simple(request: SimpleTranslationRequest):
     except Exception as e:
         logger.error(f"❌ Simple translation error: {e}")
         raise HTTPException(status_code=500, detail=f"Translation failed: {str(e)}")
+
+
+@app.post("/translate-pdf")
+async def translate_pdf(
+    file: UploadFile = File(...),
+    target_language: str = Form(...)
+):
+    """Extract text from PDF and translate it"""
+    global tokenizer, model, ip, DEVICE
+    
+    if not all([tokenizer, model, ip]):
+        raise HTTPException(status_code=503, detail="Models are still loading. Please try again in a moment.")
+    
+    # Validate file type
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    
+    try:
+        # Read PDF content
+        pdf_content = await file.read()
+        pdf_file = io.BytesIO(pdf_content)
+        
+        # Extract text from PDF
+        pdf_reader = PyPDF2.PdfReader(pdf_file)
+        extracted_text = ""
+        
+        # Limit to first 2 pages as requested
+        max_pages = min(len(pdf_reader.pages), 2)
+        
+        for page_num in range(max_pages):
+            page = pdf_reader.pages[page_num]
+            extracted_text += page.extract_text() + "\n"
+        
+        if not extracted_text.strip():
+            raise HTTPException(status_code=400, detail="No text could be extracted from the PDF")
+        
+        # Clean up the extracted text
+        extracted_text = extracted_text.strip()
+        
+        # Split text into sentences for better translation
+        sentences = [sent.strip() for sent in extracted_text.split('.') if sent.strip()]
+        if not sentences:
+            sentences = [extracted_text]
+        
+        # Translate the text
+        batch = ip.preprocess_batch(
+            sentences,
+            src_lang="eng_Latn",
+            tgt_lang=target_language,
+        )
+
+        inputs = tokenizer(
+            batch,
+            truncation=True,
+            padding="longest",
+            return_tensors="pt",
+            return_attention_mask=True,
+        ).to(DEVICE)
+
+        with torch.no_grad():
+            generated_tokens = model.generate(
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
+                use_cache=False,
+                min_length=0,
+                max_length=256,
+                num_beams=5,
+                num_return_sequences=1,
+            )
+
+        decoded = tokenizer.batch_decode(
+            generated_tokens.detach().cpu().tolist(),
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=True,
+        )
+
+        translations = ip.postprocess_batch(decoded, lang=target_language)
+        
+        # Join translated sentences back together
+        translated_text = '. '.join(translations) if len(translations) > 1 else translations[0]
+
+        return {
+            "success": True,
+            "filename": file.filename,
+            "pages_processed": max_pages,
+            "extracted_text": extracted_text,
+            "translated_text": translated_text,
+            "target_language": target_language,
+            "source_language": "eng_Latn"
+        }
+
+    except Exception as e:
+        logger.error(f"❌ PDF translation error: {e}")
+        raise HTTPException(status_code=500, detail=f"PDF translation failed: {str(e)}")
 
 
 @app.get("/languages")

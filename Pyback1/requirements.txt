@@ -3,3 +3,5 @@ uvicorn[standard]
 torch>=2.5
 transformers>=4.51
 git+https://github.com/VarunGumma/IndicTransToolkit.git
+PyPDF2
+python-multipart
