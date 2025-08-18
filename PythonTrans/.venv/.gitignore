@@ -1,0 +1,5 @@
+# created by virtualenv automatically
+# This file is used to ignore the virtual environment directory in version control
+# It is not necessary to track the virtual environment in your repository
+/Pyback/.venv/.gitignore
+/PythonTrans/.venv/.gitignore

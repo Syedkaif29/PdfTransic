@@ -1,0 +1,6 @@
+/Pyback/.venv/.gitignore
+/PythonTrans/.venv/.gitignore
+# This file is used to ignore the virtual environment directory in version control
+/Pyback
+/PythonTrans
+# It is not necessary to track the virtual environment in your repository
