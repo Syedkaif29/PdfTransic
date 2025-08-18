@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { TranslationForm } from './components/TranslationForm'
+import { TranslationApiService } from './services/translationApi'
 
 interface FormData {
   text: string;
@@ -10,14 +11,47 @@ interface FormData {
 export default function App() {
   const [translatedText, setTranslatedText] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string>('');
+  const [isBackendHealthy, setIsBackendHealthy] = useState<boolean | null>(null);
+
+  // Check backend health on component mount
+  useEffect(() => {
+    const checkBackendHealth = async () => {
+      const healthy = await TranslationApiService.checkHealth();
+      setIsBackendHealthy(healthy);
+    };
+    
+    checkBackendHealth();
+    // Check health every 30 seconds
+    const interval = setInterval(checkBackendHealth, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleTranslation = async (data: FormData) => {
+    if (!data.text.trim()) {
+      setError('Please enter some text to translate');
+      return;
+    }
+
     setIsLoading(true);
-    // TODO: Implement API call to FastAPI backend
-    console.log('Translation requested:', data);
-    await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
-    setTranslatedText('Translation will appear here...');
-    setIsLoading(false);
+    setError('');
+    setTranslatedText('');
+
+    try {
+      const response = await TranslationApiService.translateText({
+        text: data.text,
+        target_language: data.targetLanguage,
+        source_language: 'eng_Latn'
+      });
+
+      setTranslatedText(response.translated_text);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Translation failed';
+      setError(errorMessage);
+      console.error('Translation error:', err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -31,6 +65,31 @@ export default function App() {
           <p className="text-lg text-gray-600 max-w-2xl mx-auto">
             Translate text and documents into various Indian languages instantly
           </p>
+          
+          {/* Backend Status Indicator */}
+          <div className="mt-4 flex justify-center">
+            <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+              isBackendHealthy === null 
+                ? 'bg-gray-100 text-gray-600' 
+                : isBackendHealthy 
+                  ? 'bg-green-100 text-green-800' 
+                  : 'bg-red-100 text-red-800'
+            }`}>
+              <div className={`w-2 h-2 rounded-full mr-2 ${
+                isBackendHealthy === null 
+                  ? 'bg-gray-400' 
+                  : isBackendHealthy 
+                    ? 'bg-green-500' 
+                    : 'bg-red-500'
+              }`}></div>
+              {isBackendHealthy === null 
+                ? 'Checking backend...' 
+                : isBackendHealthy 
+                  ? 'Backend ready' 
+                  : 'Backend unavailable'
+              }
+            </div>
+          </div>
         </div>
 
         {/* Main Content */}
@@ -38,6 +97,18 @@ export default function App() {
           <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-2xl border border-indigo-50 overflow-hidden">
             <div className="p-8">
               <TranslationForm onSubmit={handleTranslation} isLoading={isLoading} />
+              
+              {/* Error Display */}
+              {error && (
+                <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-center">
+                    <svg className="w-5 h-5 text-red-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-red-700 text-sm font-medium">{error}</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           

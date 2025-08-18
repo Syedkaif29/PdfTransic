@@ -13,16 +13,20 @@ interface FormData {
 }
 
 const indianLanguages = [
-  { code: 'hi', name: 'Hindi' },
-  { code: 'ta', name: 'Tamil' },
-  { code: 'te', name: 'Telugu' },
-  { code: 'bn', name: 'Bengali' },
-  { code: 'gu', name: 'Gujarati' },
-  { code: 'mr', name: 'Marathi' },
-  { code: 'ml', name: 'Malayalam' },
-  { code: 'pa', name: 'Punjabi' },
-  { code: 'kn', name: 'Kannada' },
-  { code: 'or', name: 'Odia' }
+  { code: 'hin_Deva', name: 'Hindi' },
+  { code: 'tam_Taml', name: 'Tamil' },
+  { code: 'tel_Telu', name: 'Telugu' },
+  { code: 'ben_Beng', name: 'Bengali' },
+  { code: 'guj_Gujr', name: 'Gujarati' },
+  { code: 'mar_Deva', name: 'Marathi' },
+  { code: 'mal_Mlym', name: 'Malayalam' },
+  { code: 'pan_Guru', name: 'Punjabi' },
+  { code: 'kan_Knda', name: 'Kannada' },
+  { code: 'ory_Orya', name: 'Odia' },
+  { code: 'asm_Beng', name: 'Assamese' },
+  { code: 'urd_Arab', name: 'Urdu' },
+  { code: 'san_Deva', name: 'Sanskrit' },
+  { code: 'npi_Deva', name: 'Nepali' }
 ];
 
 export const TranslationForm = ({ onSubmit, isLoading = false }: TranslationFormProps) => {

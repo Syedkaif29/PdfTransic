@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import torch
 import logging
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
@@ -13,6 +14,15 @@ logger = logging.getLogger(__name__)
 # Initialize FastAPI
 app = FastAPI(title="IndicTrans2 Translation API", version="1.0.0")
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Global holders
 tokenizer = None
 model = None
@@ -24,6 +34,11 @@ class TranslationRequest(BaseModel):
     sentences: List[str]
     src_lang: str
     tgt_lang: str
+
+class SimpleTranslationRequest(BaseModel):
+    text: str
+    target_language: str
+    source_language: Optional[str] = "eng_Latn"
 
 
 @app.get("/")
@@ -136,3 +151,104 @@ def translate(request: TranslationRequest):
     except Exception as e:
         logger.error(f"❌ Translation error: {e}")
         raise HTTPException(status_code=500, detail=f"Translation failed: {str(e)}")
+
+
+@app.post("/translate-simple")
+def translate_simple(request: SimpleTranslationRequest):
+    """Simple translation endpoint for single text input"""
+    global tokenizer, model, ip, DEVICE
+    
+    if not all([tokenizer, model, ip]):
+        raise HTTPException(status_code=503, detail="Models are still loading. Please try again in a moment.")
+    
+    try:
+        # Convert single text to list format
+        sentences = [request.text]
+        
+        # Step 1: Preprocess
+        batch = ip.preprocess_batch(
+            sentences,
+            src_lang=request.source_language,
+            tgt_lang=request.target_language,
+        )
+
+        # Step 2: Tokenize
+        inputs = tokenizer(
+            batch,
+            truncation=True,
+            padding="longest",
+            return_tensors="pt",
+            return_attention_mask=True,
+        ).to(DEVICE)
+
+        # Step 3: Generate
+        with torch.no_grad():
+            generated_tokens = model.generate(
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
+                use_cache=False,
+                min_length=0,
+                max_length=256,
+                num_beams=5,
+                num_return_sequences=1,
+            )
+
+        # Step 4: Decode
+        decoded = tokenizer.batch_decode(
+            generated_tokens.detach().cpu().tolist(),
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=True,
+        )
+
+        # Step 5: Postprocess
+        translations = ip.postprocess_batch(decoded, lang=request.target_language)
+
+        return {
+            "translated_text": translations[0] if translations else "",
+            "original_text": request.text,
+            "source_language": request.source_language,
+            "target_language": request.target_language,
+            "success": True
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Simple translation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Translation failed: {str(e)}")
+
+
+@app.get("/languages")
+def get_supported_languages():
+    """Get list of supported languages"""
+    return {
+        "supported_languages": {
+            "asm_Beng": "Assamese",
+            "ben_Beng": "Bengali", 
+            "brx_Deva": "Bodo",
+            "doi_Deva": "Dogri",
+            "gom_Deva": "Goan Konkani",
+            "guj_Gujr": "Gujarati",
+            "hin_Deva": "Hindi",
+            "hne_Deva": "Chhattisgarhi",
+            "kan_Knda": "Kannada",
+            "kas_Arab": "Kashmiri (Arabic)",
+            "kas_Deva": "Kashmiri (Devanagari)",
+            "kha_Latn": "Khasi",
+            "lus_Latn": "Mizo",
+            "mai_Deva": "Maithili",
+            "mal_Mlym": "Malayalam",
+            "mar_Deva": "Marathi",
+            "mni_Beng": "Manipuri (Bengali)",
+            "mni_Mtei": "Manipuri (Meetei Mayek)",
+            "npi_Deva": "Nepali",
+            "ory_Orya": "Odia",
+            "pan_Guru": "Punjabi",
+            "san_Deva": "Sanskrit",
+            "sat_Olck": "Santali",
+            "snd_Arab": "Sindhi (Arabic)",
+            "snd_Deva": "Sindhi (Devanagari)",
+            "tam_Taml": "Tamil",
+            "tel_Telu": "Telugu",
+            "urd_Arab": "Urdu"
+        },
+        "source_language": "eng_Latn"
+    }
