@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { TranslationForm } from './components/TranslationForm'
 import PdfUpload from './components/PdfUpload'
 import EnvChecker from './components/EnvChecker'
-import { TranslationApiService, type PdfTranslationResponse } from './services/translationApi'
+import { TranslationApiService } from './services/translationApi'
 
 interface FormData {
   text: string;
@@ -15,7 +15,7 @@ export default function App() {
   const [error, setError] = useState<string>('');
   const [isBackendHealthy, setIsBackendHealthy] = useState<boolean | null>(null);
   const [activeTab, setActiveTab] = useState<'text' | 'pdf'>('text');
-  const [pdfResult, setPdfResult] = useState<PdfTranslationResponse | null>(null);
+
 
   // Check backend health on component mount
   useEffect(() => {
@@ -39,7 +39,7 @@ export default function App() {
     setIsLoading(true);
     setError('');
     setTranslatedText('');
-    setPdfResult(null);
+
 
     try {
       const response = await TranslationApiService.translateText({
@@ -58,8 +58,8 @@ export default function App() {
     }
   };
 
-  const handlePdfTranslation = (result: PdfTranslationResponse) => {
-    setPdfResult(result);
+  const handlePdfTranslation = () => {
+    // Clear text translation results when PDF is processed
     setTranslatedText('');
     setError('');
   };
@@ -169,43 +169,11 @@ export default function App() {
             </div>
           )}
 
-          {/* PDF Translation Result */}
-          {pdfResult && (
-            <div className="mt-8 bg-white/80 backdrop-blur-xl rounded-2xl shadow-2xl border border-purple-50 overflow-hidden transition-all duration-500 ease-in-out">
-              <div className="p-8">
-                <h2 className="text-2xl font-bold text-gray-800 mb-4 flex items-center">
-                  <svg className="w-6 h-6 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  PDF Translation Result
-                </h2>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
-                    <span>📄 File: {pdfResult.filename}</span>
-                    <span>📑 Pages: {pdfResult.pages_processed}</span>
-                  </div>
 
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-700 mb-2">Original Text:</h3>
-                    <div className="bg-gray-50 rounded-xl p-4 text-gray-700 text-sm max-h-40 overflow-y-auto">
-                      {pdfResult.extracted_text}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-700 mb-2">Translated Text:</h3>
-                    <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-4 text-gray-800 whitespace-pre-wrap shadow-inner">
-                      {pdfResult.translated_text}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
       <EnvChecker />
-      
+
       {/* Creator Credits */}
       <div className="mt-12 text-center text-gray-500 text-sm">
         <div className="max-w-2xl mx-auto px-4 py-6 border-t border-gray-200">
@@ -213,7 +181,7 @@ export default function App() {
             Built with ❤️ by <a href="https://github.com/Syedkaif29" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 font-medium">Syedkaif29</a>
           </p>
           <p className="text-xs text-gray-400">
-            Powered by <a href="https://github.com/AI4Bharat/IndicTrans2" target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:text-indigo-700">IndicTrans2</a> • 
+            Powered by <a href="https://github.com/AI4Bharat/IndicTrans2" target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:text-indigo-700">IndicTrans2</a> •
             <a href="https://github.com/Syedkaif29/PdfTransic" target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:text-indigo-700 ml-1">View Source</a>
           </p>
         </div>

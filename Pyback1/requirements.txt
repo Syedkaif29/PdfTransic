@@ -19,6 +19,9 @@ indic-nlp-library-itt
 
 # PDF processing
 PyPDF2
+pymupdf
+pillow
+pytesseract
 
 # Additional HuggingFace dependencies
 tokenizers

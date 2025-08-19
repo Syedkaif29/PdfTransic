@@ -64,11 +64,30 @@ const PdfUpload: React.FC<PdfUploadProps> = ({ onTranslationComplete }) => {
     setError(null);
 
     try {
-      const response = await TranslationApiService.translatePdf(selectedFile, targetLanguage);
+      // Use the enhanced endpoint with duplicate removal
+      const response = await TranslationApiService.translatePdfEnhanced(selectedFile, targetLanguage);
       setResult(response);
       onTranslationComplete?.(response);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Translation failed');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!result || !selectedFile) return;
+
+    try {
+      setIsLoading(true);
+      await TranslationApiService.downloadTranslatedPdf(
+        result.extracted_text,
+        result.translated_text,
+        result.filename,
+        result.target_language
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed');
     } finally {
       setIsLoading(false);
     }
@@ -86,12 +105,22 @@ const PdfUpload: React.FC<PdfUploadProps> = ({ onTranslationComplete }) => {
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
       <h2 className="text-2xl font-bold text-gray-800 mb-6">PDF Translation</h2>
-      
+
       {/* File Upload Section */}
       <div className="mb-6">
         <label className="block text-sm font-medium text-gray-700 mb-2">
           Select PDF File (1-2 pages)
         </label>
+        <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
+          <p className="text-sm text-blue-800">
+            <strong>📄 Supported PDF Types:</strong>
+          </p>
+          <ul className="text-xs text-blue-700 mt-1 ml-4">
+            <li>• Text-based PDFs (fastest processing)</li>
+            <li>• Scanned PDFs (OCR will be used)</li>
+            <li>• Mixed content PDFs</li>
+          </ul>
+        </div>
         <div className="flex items-center space-x-4">
           <input
             ref={fileInputRef}
@@ -154,9 +183,33 @@ const PdfUpload: React.FC<PdfUploadProps> = ({ onTranslationComplete }) => {
       {result && (
         <div className="mt-6 space-y-4">
           <div className="p-4 bg-green-50 border border-green-200 rounded-md">
-            <p className="text-green-700 font-medium">
-              ✅ Successfully processed {result.filename} ({result.pages_processed} pages)
-            </p>
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-green-700 font-medium">
+                  ✅ Successfully processed {result.filename} ({result.pages_processed} pages)
+                </p>
+                {result.extraction_method && (
+                  <p className="text-green-600 text-sm mt-1">
+                    📋 Extraction method: {result.extraction_method}
+                  </p>
+                )}
+                {result.duplicates_removed && (
+                  <p className="text-green-600 text-sm mt-1">
+                    🔄 Duplicates removed for cleaner translation
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={handleDownloadPdf}
+                disabled={isLoading}
+                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>{isLoading ? 'Generating...' : 'Download PDF'}</span>
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -180,6 +233,18 @@ const PdfUpload: React.FC<PdfUploadProps> = ({ onTranslationComplete }) => {
               </div>
             </div>
           </div>
+
+          {/* Processing Stats */}
+          {(result.text_length || result.chunks_processed || result.memory_management) && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+              <p className="text-blue-800 text-sm font-medium">Processing Statistics:</p>
+              <div className="text-blue-700 text-xs mt-1 space-y-1">
+                {result.text_length && <p>• Text length: {result.text_length} characters</p>}
+                {result.chunks_processed && <p>• Chunks processed: {result.chunks_processed}</p>}
+                {result.memory_management && <p>• Memory optimization: {result.memory_management}</p>}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
