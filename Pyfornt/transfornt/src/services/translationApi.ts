@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:9001';
+import { API_CONFIG, getApiUrl } from '../config/api';
 
 export interface TranslationRequest {
   text: string;
@@ -31,7 +31,7 @@ export interface PdfTranslationResponse {
 export class TranslationApiService {
   static async translateText(request: TranslationRequest): Promise<TranslationResponse> {
     try {
-      const response = await fetch(`${API_BASE_URL}/translate-simple`, {
+      const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.TRANSLATE_SIMPLE), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -60,7 +60,7 @@ export class TranslationApiService {
 
   static async checkHealth(): Promise<boolean> {
     try {
-      const response = await fetch(`${API_BASE_URL}/health`);
+      const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.HEALTH));
       const data = await response.json();
       return data.status === 'healthy';
     } catch (error) {
@@ -70,7 +70,7 @@ export class TranslationApiService {
 
   static async getSupportedLanguages() {
     try {
-      const response = await fetch(`${API_BASE_URL}/languages`);
+      const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.LANGUAGES));
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -87,7 +87,7 @@ export class TranslationApiService {
       formData.append('file', file);
       formData.append('target_language', targetLanguage);
 
-      const response = await fetch(`${API_BASE_URL}/translate-pdf`, {
+      const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.TRANSLATE_PDF), {
         method: 'POST',
         body: formData,
       });

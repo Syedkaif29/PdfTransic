@@ -20,6 +20,8 @@ indic-nlp-library-itt
 # PDF processing
 PyPDF2
 
-# Additional HuggingFace dependencies
+# Additional dependencies that might be needed
 tokenizers
 huggingface-hub
+datasets
+accelerate

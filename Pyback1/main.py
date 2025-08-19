@@ -19,7 +19,7 @@ app = FastAPI(title="IndicTrans2 Translation API", version="1.0.0")
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173"],
+    allow_origins=["*"],  # Allow all origins for Hugging Face Spaces
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -79,8 +79,19 @@ async def startup_event():
 
         model_name = "ai4bharat/indictrans2-en-indic-dist-200M"
 
+        # Set cache directory explicitly
+        import os
+        cache_dir = os.path.expanduser("~/.cache/huggingface")
+        os.makedirs(cache_dir, exist_ok=True)
+        logger.info(f"Using cache directory: {cache_dir}")
+
         logger.info("Loading tokenizer...")
-        tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_name, 
+            trust_remote_code=True,
+            cache_dir=cache_dir,
+            local_files_only=False
+        )
         logger.info("✅ Tokenizer loaded")
 
         logger.info("Loading model...")
@@ -88,6 +99,8 @@ async def startup_event():
             model_name,
             trust_remote_code=True,
             torch_dtype=torch.float32,
+            cache_dir=cache_dir,
+            local_files_only=False
         ).to(DEVICE)
         logger.info("✅ Model loaded")
 
@@ -99,6 +112,7 @@ async def startup_event():
 
     except Exception as e:
         logger.error(f"❌ Failed to load components: {e}")
+        logger.error(f"Error type: {type(e).__name__}")
         # App stays alive, health endpoint will show "loading"
 
 

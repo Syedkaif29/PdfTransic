@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { TranslationForm } from './components/TranslationForm'
 import PdfUpload from './components/PdfUpload'
+import EnvChecker from './components/EnvChecker'
 import { TranslationApiService, type PdfTranslationResponse } from './services/translationApi'
 
 interface FormData {
@@ -22,7 +23,7 @@ export default function App() {
       const healthy = await TranslationApiService.checkHealth();
       setIsBackendHealthy(healthy);
     };
-    
+
     checkBackendHealth();
     // Check health every 30 seconds
     const interval = setInterval(checkBackendHealth, 30000);
@@ -74,27 +75,25 @@ export default function App() {
           <p className="text-lg text-gray-600 max-w-2xl mx-auto">
             Translate text and PDF documents into various Indian languages instantly
           </p>
-          
+
           {/* Backend Status Indicator */}
           <div className="mt-4 flex justify-center">
-            <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-              isBackendHealthy === null 
-                ? 'bg-gray-100 text-gray-600' 
-                : isBackendHealthy 
-                  ? 'bg-green-100 text-green-800' 
-                  : 'bg-red-100 text-red-800'
-            }`}>
-              <div className={`w-2 h-2 rounded-full mr-2 ${
-                isBackendHealthy === null 
-                  ? 'bg-gray-400' 
-                  : isBackendHealthy 
-                    ? 'bg-green-500' 
-                    : 'bg-red-500'
-              }`}></div>
-              {isBackendHealthy === null 
-                ? 'Checking backend...' 
-                : isBackendHealthy 
-                  ? 'Backend ready' 
+            <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${isBackendHealthy === null
+              ? 'bg-gray-100 text-gray-600'
+              : isBackendHealthy
+                ? 'bg-green-100 text-green-800'
+                : 'bg-red-100 text-red-800'
+              }`}>
+              <div className={`w-2 h-2 rounded-full mr-2 ${isBackendHealthy === null
+                ? 'bg-gray-400'
+                : isBackendHealthy
+                  ? 'bg-green-500'
+                  : 'bg-red-500'
+                }`}></div>
+              {isBackendHealthy === null
+                ? 'Checking backend...'
+                : isBackendHealthy
+                  ? 'Backend ready'
                   : 'Backend unavailable'
               }
             </div>
@@ -109,21 +108,19 @@ export default function App() {
               <nav className="flex space-x-8 px-8 pt-6">
                 <button
                   onClick={() => setActiveTab('text')}
-                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === 'text'
-                      ? 'border-indigo-500 text-indigo-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'text'
+                    ? 'border-indigo-500 text-indigo-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
                 >
                   Text Translation
                 </button>
                 <button
                   onClick={() => setActiveTab('pdf')}
-                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === 'pdf'
-                      ? 'border-indigo-500 text-indigo-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'pdf'
+                    ? 'border-indigo-500 text-indigo-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
                 >
                   PDF Translation
                 </button>
@@ -136,7 +133,7 @@ export default function App() {
               ) : (
                 <PdfUpload onTranslationComplete={handlePdfTranslation} />
               )}
-              
+
               {/* Error Display */}
               {error && (
                 <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -150,8 +147,8 @@ export default function App() {
               )}
             </div>
           </div>
-          
-          {/* Translation Result */}
+
+          {/* Text Translation Result */}
           {translatedText && (
             <div className="mt-8 bg-white/80 backdrop-blur-xl rounded-2xl shadow-2xl border border-purple-50 overflow-hidden transition-all duration-500 ease-in-out">
               <div className="p-8">
@@ -167,8 +164,43 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {/* PDF Translation Result */}
+          {pdfResult && (
+            <div className="mt-8 bg-white/80 backdrop-blur-xl rounded-2xl shadow-2xl border border-purple-50 overflow-hidden transition-all duration-500 ease-in-out">
+              <div className="p-8">
+                <h2 className="text-2xl font-bold text-gray-800 mb-4 flex items-center">
+                  <svg className="w-6 h-6 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  PDF Translation Result
+                </h2>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
+                    <span>📄 File: {pdfResult.filename}</span>
+                    <span>📑 Pages: {pdfResult.pages_processed}</span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-700 mb-2">Original Text:</h3>
+                    <div className="bg-gray-50 rounded-xl p-4 text-gray-700 text-sm max-h-40 overflow-y-auto">
+                      {pdfResult.extracted_text}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-700 mb-2">Translated Text:</h3>
+                    <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-4 text-gray-800 whitespace-pre-wrap shadow-inner">
+                      {pdfResult.translated_text}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+      <EnvChecker />
     </div>
   )
 }

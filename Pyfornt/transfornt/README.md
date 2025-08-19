@@ -1,69 +1,140 @@
-# React + TypeScript + Vite
+# PDFTransic Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A modern React + TypeScript frontend for translating English text and PDF documents to various Indian languages.
 
-Currently, two official plugins are available:
+## 🚀 Quick Start
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+### Local Development
 
-## Expanding the ESLint configuration
+1. **Install dependencies:**
+   ```bash
+   npm install
+   ```
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+2. **Start development server:**
+   ```bash
+   npm run dev
+   ```
 
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+3. **Access the app:**
+   - Frontend: http://localhost:5173
+   - Make sure your backend is running on http://localhost:8000
 
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
+### Environment Configuration
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+The app uses environment variables for API configuration:
+
+- **Development**: Uses `http://localhost:8000` (from `.env.local`)
+- **Production**: Uses `VITE_API_BASE_URL` environment variable
+
+## 🌐 Deployment
+
+### Vercel Deployment
+
+1. **Install Vercel CLI:**
+   ```bash
+   npm install -g vercel
+   ```
+
+2. **Deploy:**
+   ```bash
+   vercel
+   ```
+
+3. **Set environment variable in Vercel dashboard:**
+   - `VITE_API_BASE_URL` = `https://syedkaif29-pdftransic.hf.space`
+
+### Netlify Deployment
+
+1. **Install Netlify CLI:**
+   ```bash
+   npm install -g netlify-cli
+   ```
+
+2. **Deploy:**
+   ```bash
+   netlify deploy --prod
+   ```
+
+3. **Set environment variable in Netlify dashboard:**
+   - `VITE_API_BASE_URL` = `https://syedkaif29-pdftransic.hf.space`
+
+## 📁 Project Structure
+
+```
+src/
+├── components/          # React components
+│   ├── TranslationForm.tsx
+│   ├── PdfUpload.tsx
+│   └── EnvChecker.tsx   # Development environment info
+├── services/            # API services
+│   └── translationApi.ts
+├── config/              # Configuration
+│   └── api.ts          # API configuration
+└── App.tsx             # Main app component
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 🔧 Configuration Files
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- **`.env.example`** - Template for environment variables
+- **`.env.local`** - Local development configuration
+- **`.env.production`** - Production configuration template
+- **`vercel.json`** - Vercel deployment configuration
+- **`netlify.toml`** - Netlify deployment configuration
 
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## 🌍 Features
+
+- **Text Translation**: Direct text input translation
+- **PDF Translation**: Upload and translate PDF documents
+- **Multi-language Support**: 27+ Indian languages
+- **Real-time Health Check**: Backend status monitoring
+- **Responsive Design**: Works on desktop and mobile
+- **Environment Detection**: Automatic API endpoint switching
+
+## 🔒 Security
+
+- API endpoints are configured via environment variables
+- No hardcoded URLs in production builds
+- Sensitive configuration excluded from version control
+
+## 🧪 Development Tools
+
+- **Environment Checker**: Shows API configuration in development mode
+- **Health Check**: Monitors backend availability
+- **Error Handling**: Comprehensive error messages
+- **TypeScript**: Full type safety
+
+## 📋 Available Scripts
+
+- `npm run dev` - Start development server
+- `npm run build` - Build for production
+- `npm run preview` - Preview production build
+- `npm run lint` - Run ESLint
+
+## 🔗 API Integration
+
+The frontend connects to the PDFTransic backend API:
+
+- **Health Check**: `GET /health`
+- **Languages**: `GET /languages`
+- **Text Translation**: `POST /translate-simple`
+- **PDF Translation**: `POST /translate-pdf`
+
+## 🚨 Troubleshooting
+
+### API Connection Issues
+
+1. Check environment variables are set correctly
+2. Verify backend is running and accessible
+3. Check browser console for CORS errors
+4. Use the environment checker in development mode
+
+### Build Issues
+
+1. Ensure all dependencies are installed: `npm install`
+2. Check TypeScript errors: `npm run lint`
+3. Verify environment variables are properly set
+
+## 📄 License
+
+This project is open source and available under the MIT License.
