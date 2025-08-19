@@ -5,7 +5,6 @@ import { TranslationApiService, type PdfTranslationResponse } from './services/t
 
 interface FormData {
   text: string;
-  file: File | null;
   targetLanguage: string;
 }
 
@@ -70,10 +69,10 @@ export default function App() {
         {/* Header */}
         <div className="text-center mb-12">
           <h1 className="text-5xl md:text-6xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600 mb-4">
-            Indian Language Translator
+            PDFTransic
           </h1>
           <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-            Translate text and documents into various Indian languages instantly
+            Translate text and PDF documents into various Indian languages instantly
           </p>
           
           {/* Backend Status Indicator */}
