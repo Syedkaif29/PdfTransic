@@ -205,7 +205,19 @@ export default function App() {
         </div>
       </div>
       <EnvChecker />
-
+      
+      {/* Creator Credits */}
+      <div className="mt-12 text-center text-gray-500 text-sm">
+        <div className="max-w-2xl mx-auto px-4 py-6 border-t border-gray-200">
+          <p className="mb-2">
+            Built with ❤️ by <a href="https://github.com/Syedkaif29" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 font-medium">Syedkaif29</a>
+          </p>
+          <p className="text-xs text-gray-400">
+            Powered by <a href="https://github.com/AI4Bharat/IndicTrans2" target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:text-indigo-700">IndicTrans2</a> • 
+            <a href="https://github.com/Syedkaif29/PdfTransic" target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:text-indigo-700 ml-1">View Source</a>
+          </p>
+        </div>
+      </div>
 
     </div>
   )
