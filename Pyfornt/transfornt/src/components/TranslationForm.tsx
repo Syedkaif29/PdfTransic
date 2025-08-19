@@ -12,20 +12,31 @@ interface FormData {
 }
 
 const indianLanguages = [
+  { code: 'asm_Beng', name: 'Assamese' },
+  { code: 'ben_Beng', name: 'Bengali' },
+  { code: 'brx_Deva', name: 'Bodo' },
+  { code: 'doi_Deva', name: 'Dogri' },
+  { code: 'gom_Deva', name: 'Konkani' },
+  { code: 'guj_Gujr', name: 'Gujarati' },
   { code: 'hin_Deva', name: 'Hindi' },
+  { code: 'kan_Knda', name: 'Kannada' },
+  { code: 'kas_Arab', name: 'Kashmiri (Arabic)' },
+  { code: 'kas_Deva', name: 'Kashmiri (Devanagari)' },
+  { code: 'mai_Deva', name: 'Maithili' },
+  { code: 'mal_Mlym', name: 'Malayalam' },
+  { code: 'mni_Beng', name: 'Manipuri (Bengali)' },
+  { code: 'mni_Mtei', name: 'Manipuri (Meitei)' },
+  { code: 'mar_Deva', name: 'Marathi' },
+  { code: 'npi_Deva', name: 'Nepali' },
+  { code: 'ory_Orya', name: 'Odia' },
+  { code: 'pan_Guru', name: 'Punjabi' },
+  { code: 'san_Deva', name: 'Sanskrit' },
+  { code: 'sat_Olck', name: 'Santali' },
+  { code: 'snd_Arab', name: 'Sindhi (Arabic)' },
+  { code: 'snd_Deva', name: 'Sindhi (Devanagari)' },
   { code: 'tam_Taml', name: 'Tamil' },
   { code: 'tel_Telu', name: 'Telugu' },
-  { code: 'ben_Beng', name: 'Bengali' },
-  { code: 'guj_Gujr', name: 'Gujarati' },
-  { code: 'mar_Deva', name: 'Marathi' },
-  { code: 'mal_Mlym', name: 'Malayalam' },
-  { code: 'pan_Guru', name: 'Punjabi' },
-  { code: 'kan_Knda', name: 'Kannada' },
-  { code: 'ory_Orya', name: 'Odia' },
-  { code: 'asm_Beng', name: 'Assamese' },
-  { code: 'urd_Arab', name: 'Urdu' },
-  { code: 'san_Deva', name: 'Sanskrit' },
-  { code: 'npi_Deva', name: 'Nepali' }
+  { code: 'urd_Arab', name: 'Urdu' }
 ];
 
 export const TranslationForm = ({ onSubmit, isLoading = false }: TranslationFormProps) => {

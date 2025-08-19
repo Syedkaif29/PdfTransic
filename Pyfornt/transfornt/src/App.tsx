@@ -76,48 +76,9 @@ export default function App() {
             Translate text and PDF documents into 22+ Indian languages instantly with IndicTrans2
           </p>
 
-          {/* Supported Languages Showcase */}
-          <div className="mt-8 bg-white/60 backdrop-blur-sm rounded-2xl p-6 max-w-4xl mx-auto">
-            <h3 className="text-xl font-semibold text-gray-800 mb-4 text-center">
-              🌍 Supported Languages
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 text-sm">
-              {[
-                "🔤 Assamese", "🔤 Bengali", "🔤 Bodo", "🔤 Dogri",
-                "🔤 Gujarati", "🔤 Hindi", "🔤 Kannada", "🔤 Kashmiri",
-                "🔤 Konkani", "🔤 Maithili", "🔤 Malayalam", "🔤 Manipuri",
-                "🔤 Marathi", "🔤 Nepali", "🔤 Odia", "🔤 Punjabi",
-                "🔤 Sanskrit", "🔤 Santali", "🔤 Sindhi", "🔤 Tamil",
-                "🔤 Telugu", "🔤 Urdu"
-              ].map((lang, index) => (
-                <div key={index} className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-2 text-center text-gray-700 font-medium">
-                  {lang}
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-gray-500 text-center mt-4">
-              Powered by IndicTrans2 - State-of-the-art AI translation model
-            </p>
-          </div>
 
-          {/* Features Highlight */}
-          <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
-            <div className="bg-white/70 backdrop-blur-sm rounded-xl p-6 text-center">
-              <div className="text-3xl mb-3">📝</div>
-              <h4 className="font-semibold text-gray-800 mb-2">Text Translation</h4>
-              <p className="text-sm text-gray-600">Instant translation of any English text to Indian languages</p>
-            </div>
-            <div className="bg-white/70 backdrop-blur-sm rounded-xl p-6 text-center">
-              <div className="text-3xl mb-3">📄</div>
-              <h4 className="font-semibold text-gray-800 mb-2">PDF Translation</h4>
-              <p className="text-sm text-gray-600">Upload PDF documents and get translated content</p>
-            </div>
-            <div className="bg-white/70 backdrop-blur-sm rounded-xl p-6 text-center">
-              <div className="text-3xl mb-3">🤖</div>
-              <h4 className="font-semibold text-gray-800 mb-2">AI Powered</h4>
-              <p className="text-sm text-gray-600">Advanced IndicTrans2 model for accurate translations</p>
-            </div>
-          </div>
+
+
 
           {/* Backend Status Indicator */}
           <div className="mt-4 flex justify-center">
@@ -245,23 +206,7 @@ export default function App() {
       </div>
       <EnvChecker />
 
-      {/* Footer */}
-      <footer className="mt-16 text-center text-gray-500 text-sm">
-        <div className="max-w-4xl mx-auto px-4 py-8 border-t border-gray-200">
-          <p className="mb-2">
-            Built with ❤️ using <strong>IndicTrans2</strong> by AI4Bharat
-          </p>
-          <p className="text-xs">
-            Supporting digital inclusion across India's diverse linguistic landscape
-          </p>
-          <div className="mt-4 flex justify-center space-x-6 text-xs">
-            <span>🚀 FastAPI Backend</span>
-            <span>⚛️ React Frontend</span>
-            <span>🤖 AI Translation</span>
-            <span>☁️ Cloud Deployed</span>
-          </div>
-        </div>
-      </footer>
+
     </div>
   )
 }

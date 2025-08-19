@@ -14,15 +14,30 @@ const PdfUpload: React.FC<PdfUploadProps> = ({ onTranslationComplete }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const languages = {
-    'hin_Deva': 'Hindi',
+    'asm_Beng': 'Assamese',
     'ben_Beng': 'Bengali',
+    'brx_Deva': 'Bodo',
+    'doi_Deva': 'Dogri',
+    'gom_Deva': 'Konkani',
+    'guj_Gujr': 'Gujarati',
+    'hin_Deva': 'Hindi',
+    'kan_Knda': 'Kannada',
+    'kas_Arab': 'Kashmiri (Arabic)',
+    'kas_Deva': 'Kashmiri (Devanagari)',
+    'mai_Deva': 'Maithili',
+    'mal_Mlym': 'Malayalam',
+    'mni_Beng': 'Manipuri (Bengali)',
+    'mni_Mtei': 'Manipuri (Meitei)',
+    'mar_Deva': 'Marathi',
+    'npi_Deva': 'Nepali',
+    'ory_Orya': 'Odia',
+    'pan_Guru': 'Punjabi',
+    'san_Deva': 'Sanskrit',
+    'sat_Olck': 'Santali',
+    'snd_Arab': 'Sindhi (Arabic)',
+    'snd_Deva': 'Sindhi (Devanagari)',
     'tam_Taml': 'Tamil',
     'tel_Telu': 'Telugu',
-    'guj_Gujr': 'Gujarati',
-    'mar_Deva': 'Marathi',
-    'kan_Knda': 'Kannada',
-    'mal_Mlym': 'Malayalam',
-    'pan_Guru': 'Punjabi',
     'urd_Arab': 'Urdu'
   };
 
