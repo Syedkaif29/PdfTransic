@@ -22,7 +22,11 @@ PyPDF2
 pymupdf
 pillow
 pytesseract
+reportlab
 
 # Additional HuggingFace dependencies
 tokenizers
 huggingface-hub
+
+# Testing dependencies
+psutil  # For memory usage monitoring in performance tests
