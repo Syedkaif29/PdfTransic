@@ -88,8 +88,7 @@ tmp/
 temp/
 
 # Editor directories and files
-.vscode/*
-!.vscode/extensions.json
+.vscode/
 .idea
 .DS_Store
 *.suo
@@ -143,3 +142,39 @@ fix_requirements.py
 hf_space_deploy/
 hf_space_fix/
 hf_space_requirements_fix/
+
+# Custom additions for PdfTransic
+# IDE settings
+.idea/
+.vscode/
+
+# Virtual environment in Pyback1
+Pyback1/venv/
+
+# Temporary directories/artifacts
+Pyback1/1198:1206:Pyback1/
+.kiro/
+
+# Python compiled files
+Pyback1/__pycache__/
+Pyback1/*.pyc
+
+# Font management related files (tests and temporary files, not core logic)
+Pyback1/example_font_config_usage.py
+Pyback1/FONT_CONFIGURATION.md
+Pyback1/FONT_MONITORING_IMPLEMENTATION.md
+Pyback1/run_font_tests.py
+Pyback1/test_enhanced_style_factory.py
+Pyback1/test_font_config.py
+Pyback1/test_font_integration.py
+Pyback1/test_font_monitoring.py
+Pyback1/test_font_performance.py
+Pyback1/test_font_registry.py
+Pyback1/test_font_system_comprehensive.py
+Pyback1/test_language_mapper.py
+Pyback1/test_pdf_generation_integration.py
+Pyback1/test_runner_simple.py
+
+# package-lock.json files
+package-lock.json
+Pyfornt/package-lock.json
