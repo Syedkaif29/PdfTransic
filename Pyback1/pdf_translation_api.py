@@ -5,7 +5,7 @@ import json
 import io
 import logging
 from font_management import get_language_mapper
-from translation_core import extract_text_from_pdf, create_pdf_from_text, ip, tokenizer, model, DEVICE
+from translation_core import extract_text_from_pdf, ip, tokenizer, model, DEVICE
 import torch
 from docx import Document
 from docx.shared import Pt, RGBColor
@@ -134,8 +134,34 @@ async def translate_pdf_live_preview(
         else:
             element_indices.append(None)
     async def event_generator() -> AsyncGenerator[str, None]:
+        # First, send layout information
+        layout_info_event = {
+            "type": "layout_info",
+            "total_elements": len(element_texts),
+            "layout_data": [
+                {
+                    "index": idx,
+                    "text": el.text,
+                    "bbox": list(el.bbox),
+                    "font_name": el.font_name,
+                    "font_size": el.font_size,
+                    "color": list(el.color),
+                    "is_bold": el.is_bold,
+                    "is_italic": el.is_italic,
+                    "paragraph_index": idx // 10,  # Simple paragraph grouping
+                    "word_index": idx,
+                    "is_title": el.font_size > 16,
+                    "is_heading": el.font_size > 14 and el.font_size <= 16
+                }
+                for idx, el in enumerate(all_elements) if element_indices[idx] is not None
+            ]
+        }
+        yield f"data: {json.dumps(layout_info_event)}\n\n"
+        
         batch_size = 5
         trans_idx = 0
+        total_elements = len(element_texts)
+        
         for i in range(0, len(element_texts), batch_size):
             batch = element_texts[i:i+batch_size]
             try:
@@ -168,14 +194,53 @@ async def translate_pdf_live_preview(
             except Exception as batch_error:
                 logger.error(f"Error translating element batch: {batch_error}")
                 batch_trans = ["[Translation failed]"] * len(batch)
+            
             for j, orig in enumerate(batch):
+                # Find the corresponding layout element
+                layout_element = None
+                actual_element_idx = None
+                for idx, el in enumerate(all_elements):
+                    if element_indices[idx] == trans_idx and el.text.strip() == orig:
+                        layout_element = {
+                            "index": idx,
+                            "text": el.text,
+                            "bbox": list(el.bbox),
+                            "font_name": el.font_name,
+                            "font_size": el.font_size,
+                            "color": list(el.color),
+                            "is_bold": el.is_bold,
+                            "is_italic": el.is_italic,
+                            "paragraph_index": idx // 10,
+                            "word_index": idx,
+                            "is_title": el.font_size > 16,
+                            "is_heading": el.font_size > 14 and el.font_size <= 16
+                        }
+                        actual_element_idx = idx
+                        break
+                
                 event = {
+                    "type": "translation_update",
                     "element_index": trans_idx,
                     "original_text": orig,
-                    "translated_text": batch_trans[j]
+                    "translated_text": batch_trans[j],
+                    "layout": layout_element,
+                    "progress": {
+                        "current": trans_idx + 1,
+                        "total": total_elements,
+                        "percentage": ((trans_idx + 1) / total_elements) * 100,
+                        "batch_progress": f"Batch {i//batch_size + 1}/{(len(element_texts) + batch_size - 1)//batch_size}"
+                    }
                 }
                 yield f"data: {json.dumps(event)}\n\n"
                 trans_idx += 1
+        
+        # Send completion event
+        completion_event = {
+            "type": "translation_complete",
+            "total_translated": trans_idx,
+            "message": "Translation completed successfully"
+        }
+        yield f"data: {json.dumps(completion_event)}\n\n"
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @router.post("/translate-and-download-docx")
@@ -285,6 +350,75 @@ async def translate_and_download_docx(
     except Exception as e:
         logger.error(f"Error in direct DOCX translation: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate translated DOCX: {e}")
+
+@router.post("/download-translated-pdf")
+async def download_translated_pdf(
+    file: UploadFile = File(...),
+    target_language: str = Form(...),
+    original_text_chunks_json: str = Form(...),
+    translated_text_chunks_json: str = Form(...),
+    layout_data_json: str = Form(...),
+    language_code: str = Form(...)
+):
+    """Download translated document as PDF format from live preview"""
+    try:
+        # Parse the JSON data
+        original_text_chunks = json.loads(original_text_chunks_json)
+        translated_text_chunks = json.loads(translated_text_chunks_json)
+        layout_data_raw = json.loads(layout_data_json)
+        
+        # Convert layout data to proper format for create_pdf_from_text
+        from translation_core import PdfLayoutData, PdfTextElement
+        layout_data = []
+        
+        # Group elements by page (assuming single page for now)
+        page_layout = PdfLayoutData(page_number=1, width=600, height=800, text_elements=[])
+        
+        for i, element_data in enumerate(layout_data_raw):
+            if isinstance(element_data, dict):
+                text_element = PdfTextElement(
+                    text=original_text_chunks[i] if i < len(original_text_chunks) else element_data.get('text', ''),
+                    bbox=tuple(element_data.get('bbox', [0, 0, 100, 20])),
+                    font_name=element_data.get('font_name', 'Arial'),
+                    font_size=element_data.get('font_size', 12),
+                    color=tuple(element_data.get('color', [0, 0, 0])),
+                    is_bold=element_data.get('is_bold', False),
+                    is_italic=element_data.get('is_italic', False)
+                )
+                page_layout.text_elements.append(text_element)
+        
+        layout_data.append(page_layout)
+        
+        # Import the function from main module
+        from main import create_pdf_from_text
+        
+        # Create PDF using the existing function
+        pdf_buffer = create_pdf_from_text(
+            original_text_chunks=original_text_chunks,
+            translated_text_chunks=translated_text_chunks,
+            filename=file.filename,
+            target_language=target_language,
+            language_code=language_code,
+            layout_data=layout_data
+        )
+        
+        pdf_buffer.seek(0)
+        
+        # Generate filename
+        filename = file.filename or "document.pdf"
+        pdf_filename = filename.replace('.PDF', '.pdf')
+        if not pdf_filename.endswith('.pdf'):
+            pdf_filename += '.pdf'
+        
+        return StreamingResponse(
+            iter([pdf_buffer.getvalue()]),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=translated_{pdf_filename}"}
+        )
+        
+    except Exception as e:
+        logger.error(f"Error creating PDF document: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error creating PDF document: {str(e)}")
 
 @router.post("/download-translated-word")
 async def download_translated_word(

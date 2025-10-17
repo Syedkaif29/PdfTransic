@@ -120,7 +120,7 @@ const PdfUpload: React.FC<PdfUploadProps> = ({ onTranslationComplete }) => {
       const formData = new FormData();
       formData.append('file', selectedFile);
       formData.append('target_language', targetLanguage);
-      const response = await fetch('/api/translate-and-download-docx', {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/translate-and-download-docx`, {
         method: 'POST',
         body: formData,
       });

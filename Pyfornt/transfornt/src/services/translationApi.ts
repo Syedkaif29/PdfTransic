@@ -234,7 +234,7 @@ export class TranslationApiService {
     }
   }
 
-  static streamLivePreview(file: File, targetLanguage: string, onEvent: (event: { element_index: number, original_text: string, translated_text: string }) => void, onError?: (error: Error) => void, onComplete?: () => void) {
+  static streamLivePreview(file: File, targetLanguage: string, onEvent: (event: any) => void, onError?: (error: Error) => void, onComplete?: () => void) {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('target_language', targetLanguage);

@@ -180,9 +180,11 @@ def extract_text_from_pdf(pdf_content: bytes, max_pages: int = 2) -> tuple[str, 
     raise ValueError("Could not extract text from PDF. The file might be corrupted, password-protected, or contain only images without readable text.")
 
 def create_pdf_from_text(original_text_chunks: List[str], translated_text_chunks: List[str], filename: str, target_language: str, language_code: str = None, layout_data: List[PdfLayoutData] = None) -> io.BytesIO:
-    # Copy the full function body from main.py here (see above for full code)
-    # For brevity, you can copy the entire function as is, including all logic for layout, font selection, etc.
-    pass
+    """
+    Create a PDF with original and translated text using appropriate fonts for the target language and preserving layout.
+    This function is implemented in main.py to avoid circular imports.
+    """
+    raise NotImplementedError("This function should be imported from main.py to avoid circular imports")
 
 def chunk_text(text: str, max_chunk_size: int = 500) -> List[str]:
     sentences = [s.strip() for s in text.replace('\n', ' ').split('.') if s.strip()]
