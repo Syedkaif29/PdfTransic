@@ -25,6 +25,7 @@ from typing import AsyncGenerator
 from dataclasses import dataclass, field
 import json
 from pdf_translation_api import router as pdf_translation_router
+from pdf_simple_service import router as pdf_simple_router
 from translation_core import (
     extract_text_from_pdf, create_pdf_from_text, PdfTextElement, PdfLayoutData,
     ip, tokenizer, model, DEVICE, chunk_text, remove_duplicates_from_text
@@ -2058,3 +2059,4 @@ async def translate_pdf_live_preview(
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 app.include_router(pdf_translation_router)
+app.include_router(pdf_simple_router)

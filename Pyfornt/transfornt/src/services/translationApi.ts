@@ -198,6 +198,66 @@ export class TranslationApiService {
     }
   }
 
+  static async downloadTranslatedWord(
+    originalTextChunks: string[],
+    translatedTextChunks: string[],
+    filename: string,
+    targetLanguage: string,
+    layoutData: any[],
+    languageCode: string
+  ): Promise<void> {
+    try {
+      const formData = new FormData();
+      // Create a dummy file for the endpoint (it expects a file parameter)
+      const dummyFile = new File([''], filename, { type: 'application/pdf' });
+      formData.append('file', dummyFile);
+      formData.append('original_text_chunks_json', JSON.stringify(originalTextChunks));
+      formData.append('translated_text_chunks_json', JSON.stringify(translatedTextChunks));
+      formData.append('layout_data_json', JSON.stringify(layoutData));
+      formData.append('filename', filename);
+      formData.append('target_language', targetLanguage);
+      formData.append('language_code', languageCode);
+
+      const response = await fetch(getApiUrl('/download-translated-word'), {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData: ApiError = await response.json();
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+
+      // Handle the Word document download
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Extract filename from response headers or create one
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let downloadFilename = `${filename.replace('.pdf', '')}_translated_${targetLanguage}.docx`;
+      
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+        if (filenameMatch) {
+          downloadFilename = filenameMatch[1];
+        }
+      }
+      
+      link.download = downloadFilename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`Word download failed: ${error.message}`);
+      }
+      throw new Error('Word download failed: Unknown error');
+    }
+  }
+
   static async clearMemory(): Promise<{ status: string; message: string }> {
     try {
       const response = await fetch(getApiUrl('/clear-memory'), {
@@ -234,7 +294,7 @@ export class TranslationApiService {
     }
   }
 
-  static streamLivePreview(file: File, targetLanguage: string, onEvent: (event: any) => void, onError?: (error: Error) => void, onComplete?: () => void) {
+  static streamLivePreview(file: File, targetLanguage: string, onEvent: (event: unknown) => void, onError?: (error: Error) => void, onComplete?: () => void) {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('target_language', targetLanguage);

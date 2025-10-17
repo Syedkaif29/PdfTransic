@@ -66,16 +66,16 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
           // Set canvas size
           canvas.width = 600;
           canvas.height = 800;
-          
+
           // Clear canvas
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
-          
+
           // Draw PDF-like border
           ctx.strokeStyle = '#cccccc';
           ctx.lineWidth = 2;
           ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
-          
+
           // Add title
           ctx.fillStyle = '#333333';
           ctx.font = 'bold 16px Arial';
@@ -98,7 +98,7 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
                 newMap.set(event.element_index!, event.translated_text!);
                 return newMap;
               });
-              
+
               // Update progress with detailed information
               if (event.progress) {
                 setProgress(event.progress.percentage);
@@ -106,7 +106,7 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
                 const totalElements = layoutData.length || 1;
                 setProgress(((event.element_index! + 1) / totalElements) * 100);
               }
-              
+
               // Update canvas with translated text
               updateCanvasWithTranslation(event.element_index!, event.translated_text!, event.layout);
             }
@@ -122,10 +122,10 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
                 newMap.set(event.element_index!, event.translated_text!);
                 return newMap;
               });
-              
+
               const totalElements = layoutData.length || 1;
               setProgress(((event.element_index! + 1) / totalElements) * 100);
-              
+
               // Update canvas with translated text (no layout info in legacy format)
               updateCanvasWithTranslation(event.element_index!, event.translated_text!, null);
             }
@@ -139,7 +139,7 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
           setIsStreaming(false);
         }
       );
-      
+
       eventSourceRef.current = xhr;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error occurred');
@@ -172,17 +172,17 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
     // Clear and redraw background
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
+
     // Draw document-like border
     ctx.strokeStyle = '#333333';
     ctx.lineWidth = 1;
     ctx.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
-    
+
     // Add document header
     ctx.fillStyle = '#333333';
     ctx.font = 'bold 18px Arial';
     ctx.fillText('Document Translation Preview', 30, 50);
-    
+
     // Add subtitle
     ctx.fillStyle = '#666666';
     ctx.font = '12px Arial';
@@ -201,11 +201,11 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
     // Draw each paragraph with proper formatting
     paragraphGroups.forEach((paragraphElements) => {
       if (paragraphElements.length === 0) return;
-      
+
       const firstElement = paragraphElements[0];
       const isTitle = firstElement.is_title;
       const isHeading = firstElement.is_heading;
-      
+
       // Draw paragraph background (subtle)
       if (isTitle || isHeading) {
         ctx.fillStyle = 'rgba(240, 240, 240, 0.3)';
@@ -215,15 +215,15 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
         const maxY = Math.max(...paragraphElements.map(el => el.bbox[3]));
         ctx.fillRect(minX - 5, minY - 5, maxX - minX + 10, maxY - minY + 10);
       }
-      
+
       // Draw each word in the paragraph
       paragraphElements.forEach((element) => {
         const [x, y, width, height] = element.bbox;
-        
+
         // Draw original text with proper styling
         ctx.fillStyle = '#666666';
         ctx.font = `${element.is_bold ? 'bold' : 'normal'} ${element.font_size}px ${element.font_name}`;
-        
+
         // Apply text alignment
         let textX = x + 2;
         if (element.text_align === 'center') {
@@ -231,9 +231,9 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
         } else if (element.text_align === 'right') {
           textX = x + width - ctx.measureText(element.text).width - 2;
         }
-        
+
         ctx.fillText(element.text, textX, y + element.font_size + 2);
-        
+
         // Add subtle border for individual words (lighter for better readability)
         ctx.strokeStyle = '#f5f5f5';
         ctx.lineWidth = 0.5;
@@ -251,15 +251,15 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
 
     if (layout) {
       const [x, y, width, height] = layout.bbox;
-      
+
       // Clear the area
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(x, y, width, height);
-      
+
       // Draw translated text with proper alignment
       ctx.fillStyle = '#2E7D32';
       ctx.font = `${layout.is_bold ? 'bold' : 'normal'} ${layout.font_size}px ${layout.font_name}`;
-      
+
       // Apply text alignment for translated text
       let textX = x + 2;
       if (layout.text_align === 'center') {
@@ -267,18 +267,18 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
       } else if (layout.text_align === 'right') {
         textX = x + width - ctx.measureText(translatedText).width - 2;
       }
-      
+
       ctx.fillText(translatedText, textX, y + layout.font_size + 2);
-      
+
       // Add green border (subtle)
       ctx.strokeStyle = '#4CAF50';
       ctx.lineWidth = 0.5;
       ctx.strokeRect(x, y, width, height);
-      
+
       // Add subtle highlight effect
       ctx.fillStyle = 'rgba(76, 175, 80, 0.03)';
       ctx.fillRect(x, y, width, height);
-      
+
       // Add completion indicator (smaller and less intrusive)
       ctx.fillStyle = '#4CAF50';
       ctx.font = '6px Arial';
@@ -289,7 +289,7 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
       ctx.fillStyle = '#2E7D32';
       ctx.font = '12px Arial';
       ctx.fillText(`${index}: ${translatedText.substring(0, 50)}...`, 30, y);
-      
+
       // Add completion indicator
       ctx.fillStyle = '#4CAF50';
       ctx.font = '10px Arial';
@@ -299,32 +299,56 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
 
   const handleDownloadPDF = async () => {
     if (!file) return;
-    
+
     try {
       setIsDownloading(true);
-      
+
       // Prepare data for PDF download
-      const originalTexts = Array.from(translatedElements.entries()).map(([index]) => {
-        const element = layoutData[index];
-        return element ? element.text : '';
+      const originalTexts: string[] = [];
+      const translatedTexts: string[] = [];
+
+      // Build arrays in the correct order
+      for (let i = 0; i < layoutData.length; i++) {
+        const element = layoutData[i];
+        if (element && element.text) {
+          originalTexts.push(element.text);
+          // Get the corresponding translation if it exists
+          const translation = translatedElements.get(i);
+          translatedTexts.push(translation || element.text); // Fallback to original if no translation
+        }
+      }
+
+      console.log('PDF Download Data:', {
+        originalCount: originalTexts.length,
+        translatedCount: translatedTexts.length,
+        layoutCount: layoutData.length,
+        firstOriginal: originalTexts[0],
+        firstTranslated: translatedTexts[0]
       });
-      
-      const translatedTexts = Array.from(translatedElements.values());
-      
-      // Call the download PDF endpoint
+
+      // Validate we have data to work with
+      if (translatedTexts.length === 0) {
+        setError('No translated text available for PDF generation');
+        return;
+      }
+
+      // Create form data for the request
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('filename', file.name); // Add the missing filename field
       formData.append('target_language', targetLanguage);
       formData.append('original_text_chunks_json', JSON.stringify(originalTexts));
       formData.append('translated_text_chunks_json', JSON.stringify(translatedTexts));
       formData.append('layout_data_json', JSON.stringify(layoutData));
       formData.append('language_code', targetLanguage);
-      
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/download-translated-pdf`, {
+
+
+
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/download-pdf-simple`, {
         method: 'POST',
         body: formData,
       });
-      
+
       if (response.ok) {
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
@@ -336,7 +360,14 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
       } else {
-        throw new Error('Failed to download PDF');
+        // Get the error details
+        const errorText = await response.text();
+        console.error('PDF download failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText
+        });
+        throw new Error(`Failed to download PDF: ${response.status} ${response.statusText} - ${errorText}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Download failed');
@@ -347,32 +378,40 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
 
   const handleDownloadWord = async () => {
     if (!file) return;
-    
+
     try {
       setIsDownloading(true);
-      
+
       // Prepare data for Word download
-      const originalTexts = Array.from(translatedElements.entries()).map(([index]) => {
-        const element = layoutData[index];
-        return element ? element.text : '';
-      });
-      
-      const translatedTexts = Array.from(translatedElements.values());
-      
+      const originalTexts: string[] = [];
+      const translatedTexts: string[] = [];
+
+      // Build arrays in the correct order
+      for (let i = 0; i < layoutData.length; i++) {
+        const element = layoutData[i];
+        if (element && element.text) {
+          originalTexts.push(element.text);
+          // Get the corresponding translation if it exists
+          const translation = translatedElements.get(i);
+          translatedTexts.push(translation || element.text); // Fallback to original if no translation
+        }
+      }
+
       // Call the download Word endpoint
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('filename', file.name); // Add filename for consistency
       formData.append('target_language', targetLanguage);
       formData.append('original_text_chunks_json', JSON.stringify(originalTexts));
       formData.append('translated_text_chunks_json', JSON.stringify(translatedTexts));
       formData.append('layout_data_json', JSON.stringify(layoutData));
       formData.append('language_code', targetLanguage);
-      
+
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/download-translated-word`, {
         method: 'POST',
         body: formData,
       });
-      
+
       if (response.ok) {
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
@@ -496,7 +535,7 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
                   <h3 className="text-2xl font-bold text-gray-800">Translation Complete!</h3>
                 </div>
                 <p className="text-gray-600 mb-6">Your document has been successfully translated. Download it in your preferred format:</p>
-                
+
                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
                   <button
                     onClick={handleDownloadPDF}
@@ -517,7 +556,7 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
                       </>
                     )}
                   </button>
-                  
+
                   <button
                     onClick={handleDownloadWord}
                     disabled={isDownloading}

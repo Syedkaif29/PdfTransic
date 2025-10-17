@@ -5,14 +5,117 @@ import json
 import io
 import logging
 from font_management import get_language_mapper
-from translation_core import extract_text_from_pdf, ip, tokenizer, model, DEVICE
+from translation_core import extract_text_from_pdf, create_pdf_from_text, chunk_text, remove_duplicates_from_text, ip, tokenizer, model, DEVICE
 import torch
 from docx import Document
 from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import inch
+
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+
+
+@router.post("/translate-pdf-enhanced")
+async def translate_pdf_enhanced(
+    file: UploadFile = File(...),
+    target_language: str = Form(...)
+):
+    """Enhanced PDF translation with duplicate removal and layout data"""
+    global tokenizer, model, ip, DEVICE
+    if not all([tokenizer, model, ip]):
+        raise HTTPException(status_code=503, detail="Models are still loading. Please try again in a moment.")
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    
+    try:
+        pdf_content = await file.read()
+        extracted_text, extraction_method, layout_data = extract_text_from_pdf(pdf_content, max_pages=2)
+        
+        if not extracted_text.strip():
+            raise HTTPException(status_code=422, detail="Could not extract text from PDF")
+        
+        # Remove duplicates for cleaner translation
+        cleaned_text = remove_duplicates_from_text(extracted_text)
+        duplicates_removed = len(extracted_text) != len(cleaned_text)
+        
+        # Split into chunks for processing
+        text_chunks = chunk_text(cleaned_text, max_chunk_size=500)
+        
+        # Translate chunks in batches
+        all_translations = []
+        batch_size = 10
+        
+        for i in range(0, len(text_chunks), batch_size):
+            batch = text_chunks[i:i+batch_size]
+            try:
+                pre = ip.preprocess_batch(batch, src_lang="eng_Latn", tgt_lang=target_language)
+                inputs = tokenizer(
+                    pre,
+                    truncation=True,
+                    padding="longest",
+                    return_tensors="pt",
+                    return_attention_mask=True,
+                    max_length=512,
+                ).to(DEVICE)
+                
+                with torch.no_grad():
+                    generated_tokens = model.generate(
+                        input_ids=inputs["input_ids"],
+                        attention_mask=inputs["attention_mask"],
+                        use_cache=False,
+                        min_length=0,
+                        max_length=256,
+                        num_beams=3,
+                        num_return_sequences=1,
+                        do_sample=False,
+                    )
+                
+                decoded = tokenizer.batch_decode(
+                    generated_tokens.detach().cpu().tolist(),
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=True,
+                )
+                
+                batch_trans = ip.postprocess_batch(decoded, lang=target_language)
+                all_translations.extend(batch_trans)
+                
+            except Exception as batch_error:
+                logger.error(f"Error translating batch: {batch_error}")
+                all_translations.extend(["[Translation failed]"] * len(batch))
+        
+        # Join translations
+        translated_text = ' '.join(all_translations)
+        
+        return {
+            "success": True,
+            "filename": file.filename,
+            "pages_processed": 2,
+            "extracted_text": extracted_text,
+            "translated_text": translated_text,
+            "target_language": target_language,
+            "source_language": "eng_Latn",
+            "extraction_method": extraction_method,
+            "duplicates_removed": duplicates_removed,
+            "text_length": len(extracted_text),
+            "chunks_processed": len(text_chunks),
+            "memory_management": "chunking",
+            "layout_data_available": bool(layout_data),
+            "original_text_chunks": text_chunks,
+            "translated_text_chunks": all_translations,
+            "layout_data": layout_data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in enhanced PDF translation: {e}")
+        raise HTTPException(status_code=500, detail=f"Enhanced PDF translation failed: {e}")
 
 @router.post("/translate-and-download-pdf")
 async def translate_and_download_pdf(
@@ -353,62 +456,47 @@ async def translate_and_download_docx(
 
 @router.post("/download-translated-pdf")
 async def download_translated_pdf(
-    file: UploadFile = File(...),
-    target_language: str = Form(...),
     original_text_chunks_json: str = Form(...),
     translated_text_chunks_json: str = Form(...),
     layout_data_json: str = Form(...),
-    language_code: str = Form(...)
+    filename: str = Form(...),
+    target_language: str = Form(...)
 ):
-    """Download translated document as PDF format from live preview"""
+    """Download translated document as PDF format from Extract & Translate"""
+    logger.info(f"PDF download request received")
+    logger.info(f"Filename: {filename}")
+    logger.info(f"Target language: {target_language}")
+    
     try:
         # Parse the JSON data
         original_text_chunks = json.loads(original_text_chunks_json)
         translated_text_chunks = json.loads(translated_text_chunks_json)
-        layout_data_raw = json.loads(layout_data_json)
+        layout_data = json.loads(layout_data_json)
         
-        # Convert layout data to proper format for create_pdf_from_text
-        from translation_core import PdfLayoutData, PdfTextElement
-        layout_data = []
+        logger.info(f"Parsed data: {len(translated_text_chunks)} translated chunks")
         
-        # Group elements by page (assuming single page for now)
-        page_layout = PdfLayoutData(page_number=1, width=600, height=800, text_elements=[])
+        # Validate data
+        if not translated_text_chunks:
+            raise HTTPException(status_code=422, detail="No translated text chunks provided")
         
-        for i, element_data in enumerate(layout_data_raw):
-            if isinstance(element_data, dict):
-                text_element = PdfTextElement(
-                    text=original_text_chunks[i] if i < len(original_text_chunks) else element_data.get('text', ''),
-                    bbox=tuple(element_data.get('bbox', [0, 0, 100, 20])),
-                    font_name=element_data.get('font_name', 'Arial'),
-                    font_size=element_data.get('font_size', 12),
-                    color=tuple(element_data.get('color', [0, 0, 0])),
-                    is_bold=element_data.get('is_bold', False),
-                    is_italic=element_data.get('is_italic', False)
-                )
-                page_layout.text_elements.append(text_element)
-        
-        layout_data.append(page_layout)
-        
-        # Import the function from main module
-        from main import create_pdf_from_text
-        
-        # Create PDF using the existing function
+        # Create PDF using the existing create_pdf_from_text function
         pdf_buffer = create_pdf_from_text(
             original_text_chunks=original_text_chunks,
             translated_text_chunks=translated_text_chunks,
-            filename=file.filename,
+            filename=filename,
             target_language=target_language,
-            language_code=language_code,
+            language_code=target_language,
             layout_data=layout_data
         )
         
         pdf_buffer.seek(0)
         
         # Generate filename
-        filename = file.filename or "document.pdf"
         pdf_filename = filename.replace('.PDF', '.pdf')
         if not pdf_filename.endswith('.pdf'):
             pdf_filename += '.pdf'
+        
+        logger.info(f"Successfully created PDF: {len(pdf_buffer.getvalue())} bytes")
         
         return StreamingResponse(
             iter([pdf_buffer.getvalue()]),
@@ -417,12 +505,116 @@ async def download_translated_pdf(
         )
         
     except Exception as e:
-        logger.error(f"Error creating PDF document: {str(e)}")
+        logger.error(f"Error creating PDF: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error creating PDF document: {str(e)}")
+
+@router.post("/download-translated-pdf-simple")
+async def download_translated_pdf_simple(
+    file: UploadFile = File(...),
+    filename: str = Form(...),
+    target_language: str = Form(...),
+    original_text_chunks_json: str = Form(...),
+    translated_text_chunks_json: str = Form(...),
+    layout_data_json: str = Form(...),
+    language_code: str = Form(...)
+):
+    """Download translated document as PDF format from live preview - simplified version"""
+    logger.info(f"Simple PDF download request received")
+    logger.info(f"Filename: {filename}")
+    logger.info(f"Target language: {target_language}")
+    
+    try:
+        # Parse the JSON data (same as Word endpoint)
+        original_text_chunks = json.loads(original_text_chunks_json)
+        translated_text_chunks = json.loads(translated_text_chunks_json)
+        layout_data = json.loads(layout_data_json)
+        
+        logger.info(f"Parsed data: {len(translated_text_chunks)} translated chunks")
+        
+        # Validate data
+        if not translated_text_chunks:
+            raise HTTPException(status_code=422, detail="No translated text chunks provided")
+        
+        # Create PDF using ReportLab (simple approach)
+        buffer = io.BytesIO()
+        c = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
+        margin = 1 * inch
+        y_position = height - margin
+        line_height = 14
+        
+        # Title
+        c.setFont("Helvetica-Bold", 20)
+        title_text = "Translated Document"
+        title_width = c.stringWidth(title_text, "Helvetica-Bold", 20)
+        c.drawString((width - title_width) / 2, y_position, title_text)
+        y_position -= 2 * line_height
+        
+        # Language info
+        c.setFont("Helvetica", 12)
+        lang_text = f"Translated to: {target_language}"
+        lang_width = c.stringWidth(lang_text, "Helvetica", 12)
+        c.drawString((width - lang_width) / 2, y_position, lang_text)
+        y_position -= line_height
+        
+        # Separator
+        separator = "─" * 50
+        sep_width = c.stringWidth(separator, "Helvetica", 12)
+        c.drawString((width - sep_width) / 2, y_position, separator)
+        y_position -= 2 * line_height
+        
+        # Content - just add all translated text
+        c.setFont("Helvetica", 12)
+        all_translated = ' '.join(translated_text_chunks)
+        
+        # Simple text wrapping
+        words = all_translated.split()
+        current_line = ""
+        
+        for word in words:
+            test_line = current_line + " " + word if current_line else word
+            if c.stringWidth(test_line, "Helvetica", 12) < (width - 2 * margin):
+                current_line = test_line
+            else:
+                if current_line:
+                    if y_position < margin:
+                        c.showPage()
+                        y_position = height - margin
+                    c.drawString(margin, y_position, current_line)
+                    y_position -= line_height
+                current_line = word
+        
+        # Draw remaining text
+        if current_line:
+            if y_position < margin:
+                c.showPage()
+                y_position = height - margin
+            c.drawString(margin, y_position, current_line)
+        
+        c.save()
+        buffer.seek(0)
+        
+        # Generate filename
+        pdf_filename = filename.replace('.PDF', '.pdf')
+        if not pdf_filename.endswith('.pdf'):
+            pdf_filename += '.pdf'
+        
+        logger.info(f"Successfully created simple PDF: {len(buffer.getvalue())} bytes")
+        
+        return StreamingResponse(
+            iter([buffer.getvalue()]),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=translated_{pdf_filename}"}
+        )
+        
+    except Exception as e:
+        logger.error(f"Error creating simple PDF: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error creating PDF document: {str(e)}")
 
 @router.post("/download-translated-word")
 async def download_translated_word(
     file: UploadFile = File(...),
+    filename: str = Form(...),
     target_language: str = Form(...),
     original_text_chunks_json: str = Form(...),
     translated_text_chunks_json: str = Form(...),
@@ -513,7 +705,6 @@ async def download_translated_word(
         doc_buffer.seek(0)
         
         # Generate filename
-        filename = file.filename or "document.pdf"
         word_filename = filename.replace('.pdf', '.docx').replace('.PDF', '.docx')
         if not word_filename.endswith('.docx'):
             word_filename += '.docx'
