@@ -32,6 +32,10 @@ export interface PdfTranslationResponse {
   memory_management?: string;
   duplicates_removed?: boolean;
   download_available?: boolean;
+  layout_data_available?: boolean; // New field
+  original_text_chunks: string[]; // New field
+  translated_text_chunks: string[]; // New field
+  layout_data?: any[]; // New field for PyMuPDF layout data
 }
 
 export class TranslationApiService {
@@ -140,15 +144,17 @@ export class TranslationApiService {
   }
 
   static async downloadTranslatedPdf(
-    originalText: string,
-    translatedText: string,
+    originalTextChunks: string[], // Changed from originalText: string
+    translatedTextChunks: string[], // Changed from translatedText: string
     filename: string,
-    targetLanguage: string
+    targetLanguage: string,
+    layoutData: any[] // New parameter for layout data
   ): Promise<void> {
     try {
       const formData = new FormData();
-      formData.append('original_text', originalText);
-      formData.append('translated_text', translatedText);
+      formData.append('original_text_chunks_json', JSON.stringify(originalTextChunks)); // Stringify
+      formData.append('translated_text_chunks_json', JSON.stringify(translatedTextChunks)); // Stringify
+      formData.append('layout_data_json', JSON.stringify(layoutData)); // Stringify
       formData.append('filename', filename);
       formData.append('target_language', targetLanguage);
 
@@ -226,5 +232,51 @@ export class TranslationApiService {
       }
       throw new Error('Memory info failed: Unknown error');
     }
+  }
+
+  static streamLivePreview(file: File, targetLanguage: string, onEvent: (event: { element_index: number, original_text: string, translated_text: string }) => void, onError?: (error: Error) => void, onComplete?: () => void) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('target_language', targetLanguage);
+
+    // We need to manually construct the request for SSE (can't use fetch with FormData for SSE)
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', getApiUrl('/translate-pdf-live-preview'), true);
+    xhr.responseType = 'text';
+
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState === XMLHttpRequest.DONE) {
+        if (xhr.status !== 200 && onError) {
+          onError(new Error(`Live preview failed: ${xhr.statusText}`));
+        } else if (onComplete) {
+          onComplete();
+        }
+      }
+    };
+
+    let lastIndex = 0;
+    xhr.onprogress = function () {
+      const newText = xhr.responseText.substring(lastIndex);
+      lastIndex = xhr.responseText.length;
+      // Split by double newlines (SSE event separator)
+      const events = newText.split(/\n\n+/);
+      for (const event of events) {
+        if (event.startsWith('data: ')) {
+          try {
+            const json = JSON.parse(event.replace('data: ', ''));
+            onEvent(json);
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+      }
+    };
+
+    xhr.onerror = function () {
+      if (onError) onError(new Error('Live preview connection error'));
+    };
+
+    xhr.send(formData);
+    return xhr; // Allow caller to abort if needed
   }
 }

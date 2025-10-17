@@ -1,5 +1,12 @@
 import React, { useState, useRef } from 'react';
 import { TranslationApiService, type PdfTranslationResponse } from '../services/translationApi';
+import PdfLivePreview from './PdfLivePreview';
+
+interface LiveEvent {
+  element_index: number;
+  original_text: string;
+  translated_text: string;
+}
 
 interface PdfUploadProps {
   onTranslationComplete?: (result: PdfTranslationResponse) => void;
@@ -12,6 +19,11 @@ const PdfUpload: React.FC<PdfUploadProps> = ({ onTranslationComplete }) => {
   const [result, setResult] = useState<PdfTranslationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [livePreview, setLivePreview] = useState<LiveEvent[]>([]);
+  const [isLivePreviewing, setIsLivePreviewing] = useState(false);
+  const [livePreviewComplete, setLivePreviewComplete] = useState(false);
+  const [showLivePreviewModal, setShowLivePreviewModal] = useState(false);
+  const livePreviewXhr = useRef<XMLHttpRequest | null>(null);
 
   const languages = {
     'asm_Beng': 'Assamese',
@@ -78,14 +90,52 @@ const PdfUpload: React.FC<PdfUploadProps> = ({ onTranslationComplete }) => {
   const handleDownloadPdf = async () => {
     if (!result || !selectedFile) return;
 
+    // --- ADDED CONSOLE.LOG STATEMENTS FOR DEBUGGING ---
+    console.log("Original Text Chunks:", result.original_text_chunks);
+    console.log("Translated Text Chunks:", result.translated_text_chunks);
+    console.log("Layout Data:", result.layout_data);
+    // --------------------------------------------------
+
     try {
       setIsLoading(true);
       await TranslationApiService.downloadTranslatedPdf(
-        result.extracted_text,
-        result.translated_text,
+        result.original_text_chunks, // Pass original text chunks
+        result.translated_text_chunks, // Pass translated text chunks
         result.filename,
-        result.target_language
+        result.target_language,
+        result.layout_data || [] // Pass layout data, defaulting to empty array if not present
       );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
+  const handleDownloadWord = async () => {
+    if (!selectedFile) return;
+    try {
+      setIsLoading(true);
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('target_language', targetLanguage);
+      const response = await fetch('/api/translate-and-download-docx', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!response.ok) {
+        throw new Error('Failed to download Word file');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = selectedFile.name.replace('.pdf', '_translated.docx');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Download failed');
     } finally {
@@ -199,16 +249,25 @@ const PdfUpload: React.FC<PdfUploadProps> = ({ onTranslationComplete }) => {
                   </p>
                 )}
               </div>
-              <button
-                onClick={handleDownloadPdf}
-                disabled={isLoading}
-                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span>{isLoading ? 'Generating...' : 'Download PDF'}</span>
-              </button>
+              {/* Download Buttons Section (after translation/live preview complete) */}
+              {(result || livePreviewComplete) && (
+                <div className="flex gap-4">
+                  <button
+                    onClick={handleDownloadPdf}
+                    disabled={isLoading || !(result || livePreviewComplete)}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {isLoading ? 'Generating...' : 'Download PDF'}
+                  </button>
+                  <button
+                    onClick={handleDownloadWord}
+                    disabled={isLoading || !(result || livePreviewComplete)}
+                    className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {isLoading ? 'Generating...' : 'Download Word'}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -246,6 +305,40 @@ const PdfUpload: React.FC<PdfUploadProps> = ({ onTranslationComplete }) => {
             </div>
           )}
         </div>
+      )}
+
+      {/* Live Preview Section */}
+      {selectedFile && (
+        <div className="mb-6">
+          <button
+            onClick={() => setShowLivePreviewModal(true)}
+            disabled={!selectedFile || isLoading}
+            className="w-full bg-purple-600 text-white py-3 px-4 rounded-md hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors mb-2"
+          >
+            Start Live Preview
+          </button>
+          {livePreview.length > 0 && (
+            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md max-h-60 overflow-y-auto mt-2">
+              <h3 className="font-semibold text-gray-800 mb-2">Live Translated Text:</h3>
+              <ol className="text-sm text-gray-700 whitespace-pre-wrap list-decimal ml-4">
+                {livePreview.map((ev, idx) => (
+                  <li key={idx}><span className="text-gray-500">{ev.original_text}:</span> <span className="text-blue-800">{ev.translated_text}</span></li>
+                ))}
+              </ol>
+              {isLivePreviewing && <p className="text-xs text-yellow-700 mt-2">Streaming translation...</p>}
+              {livePreviewComplete && <p className="text-xs text-green-700 mt-2">Live preview complete.</p>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Live Preview Modal */}
+      {showLivePreviewModal && selectedFile && (
+        <PdfLivePreview
+          file={selectedFile}
+          targetLanguage={targetLanguage}
+          onClose={() => setShowLivePreviewModal(false)}
+        />
       )}
     </div>
   );

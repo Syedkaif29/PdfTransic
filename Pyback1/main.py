@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Tuple, Dict, Any
 import torch
 import logging
 import asyncio
@@ -20,29 +20,36 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from fastapi.responses import StreamingResponse
 from font_management import initialize_font_system, get_font_registry, get_language_mapper, get_style_factory
+from typing import AsyncGenerator
 
-# Set up logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
-logging.getLogger('font_management').setLevel(logging.DEBUG)
+from dataclasses import dataclass, field
+import json
+from pdf_translation_api import router as pdf_translation_router
+from translation_core import (
+    extract_text_from_pdf, create_pdf_from_text, PdfTextElement, PdfLayoutData,
+    ip, tokenizer, model, DEVICE, chunk_text, remove_duplicates_from_text
+)
 
-# Initialize FastAPI
-app = FastAPI(title="IndicTrans2 Translation API", version="1.0.0")
+# Create FastAPI app
+app = FastAPI(
+    title="IndicTrans2 Translation API",
+    description="API for translating text and PDFs using IndicTrans2 model with font support",
+    version="1.0.0"
+)
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for Hugging Face Spaces
+    allow_origins=["*"],  # Configure this properly for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Global holders
-tokenizer = None
-model = None
-ip = None
-DEVICE = None
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+logging.getLogger('font_management').setLevel(logging.WARNING)
 
 # Font system globals
 font_system_initialized = False
@@ -106,6 +113,7 @@ async def health_check():
         "font_system": {
             "status": font_status,
             "error": font_initialization_error,
+            "message": "Font system not yet initialized" if not font_system_initialized else "Font system initialized",
             **font_info
         }
     }
@@ -146,11 +154,11 @@ async def initialize_fonts_async():
         font_registry = get_font_registry()
         summary = font_registry.get_registration_summary()
         
-        logger.info(f"📊 Font registration summary:")
-        logger.info(f"  - Total fonts: {summary['total_fonts']}")
-        logger.info(f"  - Registered fonts: {summary['registered_fonts']}")
-        logger.info(f"  - Font families: {summary['total_families']}")
-        logger.info(f"  - Available families: {summary['available_families']}")
+        # logger.info(f"📊 Font registration summary:")
+        # logger.info(f"  - Total fonts: {summary['total_fonts']}")
+        # logger.info(f"  - Registered fonts: {summary['registered_fonts']}")
+        # logger.info(f"  - Font families: {summary['total_families']}")
+        # logger.info(f"  - Available families: {summary['available_families']}")
         
         # Log any registration errors
         if summary['registration_errors']:
@@ -163,10 +171,10 @@ async def initialize_fonts_async():
         # Test language mapper
         language_mapper = get_language_mapper()
         mapping_summary = language_mapper.get_mapping_summary()
-        logger.info(f"🌐 Language mapping summary:")
-        logger.info(f"  - Total language mappings: {mapping_summary['total_language_mappings']}")
-        logger.info(f"  - Available mappings: {mapping_summary['available_language_mappings']}")
-        logger.info(f"  - Supported languages: {len(mapping_summary['supported_languages'])}")
+        # logger.info(f"🌐 Language mapping summary:")
+        # logger.info(f"  - Total language mappings: {mapping_summary['total_language_mappings']}")
+        # logger.info(f"  - Available mappings: {mapping_summary['available_language_mappings']}")
+        # logger.info(f"  - Supported languages: {len(mapping_summary['supported_languages'])}")
         
         font_system_initialized = True
         logger.info("🎉 Font system initialization completed successfully!")
@@ -361,13 +369,57 @@ def translate_simple(request: SimpleTranslationRequest):
         raise HTTPException(status_code=500, detail=f"Translation failed: {str(e)}")
 
 
-def extract_text_from_pdf(pdf_content: bytes, max_pages: int = 2) -> tuple[str, str]:
+def _process_pymupdf_layout(page_dict: Dict[str, Any], page_number: int) -> PdfLayoutData:
+    """
+    Processes the dictionary output from fitz.page.get_text("dict") to extract structured layout data.
+    """
+    page_layout = PdfLayoutData(page_number=page_number, width=page_dict['width'], height=page_dict['height'])
+    
+    for block in page_dict['blocks']:
+        if block['type'] == 0:  # Text block
+            for line in block['lines']:
+                line_text = ""
+                line_bbox = list(line['bbox'])
+                for span in line['spans']:
+                    # Accumulate text for the line
+                    line_text += span['text']
+                    
+                    # Attempt to get font details from the first span in the line
+                    # More sophisticated logic might average or take the most common font/size
+                    font_name = span['font']
+                    font_size = span['size']
+                    color_rgb = fitz.utils.sRGB_to_rgb(span['color']) # Convert integer color to RGB tuple
+                    
+                    # Check for bold/italic - simplistic check, might need regex for more complex font names
+                    is_bold = "bold" in font_name.lower()
+                    is_italic = "italic" in font_name.lower()
+
+                    page_layout.text_elements.append(
+                        PdfTextElement(
+                            text=span['text'],
+                            bbox=tuple(span['bbox']), # Use span's bbox for granular placement
+                            font_name=font_name,
+                            font_size=font_size,
+                            color=color_rgb,
+                            is_bold=is_bold,
+                            is_italic=is_italic
+                        )
+                    )
+
+    # Note: This is a simplified extraction. For full fidelity, you'd need to handle
+    # alignments, line spacing, super/subscripts, etc., which are complex.
+    return page_layout
+
+
+def extract_text_from_pdf(pdf_content: bytes, max_pages: int = 2) -> tuple[str, str, List[PdfLayoutData]]:
     """
     Enhanced PDF text extraction with OCR fallback and memory management
-    Returns: (extracted_text, extraction_method)
+    Returns: (extracted_text, extraction_method, layout_data)
     """
     extraction_method = "Unknown"
     extracted_text = ""
+    
+    all_layout_data: List[PdfLayoutData] = []
     
     try:
         # Method 1: Try PyPDF2 first (fastest for text-based PDFs)
@@ -375,9 +427,9 @@ def extract_text_from_pdf(pdf_content: bytes, max_pages: int = 2) -> tuple[str, 
         pdf_reader = PyPDF2.PdfReader(pdf_file)
         
         # Limit pages
-        max_pages = min(len(pdf_reader.pages), max_pages)
+        max_pages_to_process = min(len(pdf_reader.pages), max_pages)
         
-        for page_num in range(max_pages):
+        for page_num in range(max_pages_to_process):
             page = pdf_reader.pages[page_num]
             page_text = page.extract_text()
             if page_text.strip():
@@ -385,39 +437,71 @@ def extract_text_from_pdf(pdf_content: bytes, max_pages: int = 2) -> tuple[str, 
         
         if extracted_text.strip():
             extraction_method = "PyPDF2 (text-based)"
-            return extracted_text.strip(), extraction_method
+            # For PyPDF2, we don't have detailed layout, so return empty list for now
+            logger.info(f"Extracted text using {extraction_method}")
+            return extracted_text.strip(), extraction_method, []
             
     except Exception as e:
         logger.warning(f"PyPDF2 extraction failed: {e}")
     
     try:
-        # Method 2: Try PyMuPDF (better for complex PDFs)
+        # Method 2: Try PyMuPDF (better for complex PDFs and layout extraction)
         pdf_document = fitz.open(stream=pdf_content, filetype="pdf")
         
-        max_pages = min(len(pdf_document), max_pages)
+        max_pages_to_process = min(len(pdf_document), max_pages)
         
-        for page_num in range(max_pages):
+        current_page_text = ""
+        for page_num in range(max_pages_to_process):
             page = pdf_document[page_num]
+            page_dict = page.get_text("dict")  # Get detailed layout as dictionary
+            
+            # Process layout data
+            page_layout = _process_pymupdf_layout(page_dict, page_num)
+            all_layout_data.append(page_layout)
+            
+            # Also extract plain text for translation
             page_text = page.get_text()
             if page_text.strip():
-                extracted_text += page_text + "\n"
+                current_page_text += page_text + "\n"
         
         pdf_document.close()
         
-        if extracted_text.strip():
-            extraction_method = "PyMuPDF (advanced text)"
-            return extracted_text.strip(), extraction_method
+        if current_page_text.strip():
+            extracted_text = current_page_text.strip()
+            extraction_method = "PyMuPDF (layout-rich text)"
+            logger.info(f"Extracted text using {extraction_method}")
+            return extracted_text, extraction_method, all_layout_data
             
     except Exception as e:
-        logger.warning(f"PyMuPDF extraction failed: {e}")
-    
+        logger.warning(f"PyMuPDF layout extraction failed: {e}")
+        all_layout_data = [] # Clear any partial layout data on failure
+        # Fallback to simple text extraction from PyMuPDF if dict fails
+        try:
+            pdf_document = fitz.open(stream=pdf_content, filetype="pdf")
+            current_page_text = ""
+            max_pages_to_process = min(len(pdf_document), max_pages)
+            for page_num in range(max_pages_to_process):
+                page = pdf_document[page_num]
+                page_text = page.get_text()
+                if page_text.strip():
+                    current_page_text += page_text + "\n"
+            pdf_document.close()
+            if current_page_text.strip():
+                extracted_text = current_page_text.strip()
+                extraction_method = "PyMuPDF (simple text)"
+                logger.info(f"Extracted text using {extraction_method} after layout extraction failed.")
+                return extracted_text, extraction_method, []
+        except Exception as e_fallback:
+            logger.warning(f"PyMuPDF simple text extraction fallback also failed: {e_fallback}")
+
+    # Method 3: OCR fallback for scanned PDFs (with memory management)
     try:
-        # Method 3: OCR fallback for scanned PDFs (with memory management)
         pdf_document = fitz.open(stream=pdf_content, filetype="pdf")
         
-        max_pages = min(len(pdf_document), max_pages)
+        max_pages_to_process = min(len(pdf_document), max_pages)
         
-        for page_num in range(max_pages):
+        current_page_text = ""
+        for page_num in range(max_pages_to_process):
             page = pdf_document[page_num]
             
             # Convert page to image with lower resolution to save memory
@@ -426,6 +510,13 @@ def extract_text_from_pdf(pdf_content: bytes, max_pages: int = 2) -> tuple[str, 
             img_data = pix.tobytes("png")
             
             # Convert to PIL Image
+            # No longer need PIL Image here if we are removing Pillow
+            # image = Image.open(io.BytesIO(img_data))
+            
+            # Perform OCR (Pillow dependencies still needed for tesseract)
+            # pytesseract.image_to_string expects PIL Image or path to image
+            # Re-introduce Image import if OCR is to be used
+            from PIL import Image # Temporarily re-import Image for OCR
             image = Image.open(io.BytesIO(img_data))
             
             # Resize image if too large (memory management)
@@ -438,7 +529,7 @@ def extract_text_from_pdf(pdf_content: bytes, max_pages: int = 2) -> tuple[str, 
             # Perform OCR
             page_text = pytesseract.image_to_string(image, lang='eng')
             if page_text.strip():
-                extracted_text += page_text + "\n"
+                current_page_text += page_text + "\n"
             
             # Clean up memory
             del image
@@ -446,9 +537,11 @@ def extract_text_from_pdf(pdf_content: bytes, max_pages: int = 2) -> tuple[str, 
         
         pdf_document.close()
         
-        if extracted_text.strip():
+        if current_page_text.strip():
+            extracted_text = current_page_text.strip()
             extraction_method = "OCR (scanned PDF)"
-            return extracted_text.strip(), extraction_method
+            logger.info(f"Extracted text using {extraction_method}")
+            return extracted_text, extraction_method, []
             
     except Exception as e:
         logger.warning(f"OCR extraction failed: {e}")
@@ -515,7 +608,7 @@ async def translate_pdf(
         pdf_content = await file.read()
         
         # Enhanced text extraction with multiple methods
-        extracted_text, extraction_method = extract_text_from_pdf(pdf_content, max_pages=2)
+        extracted_text, extraction_method, layout_data = extract_text_from_pdf(pdf_content, max_pages=2)
         
         logger.info(f"Text extracted using: {extraction_method}")
         
@@ -910,8 +1003,8 @@ async def test_font_rendering(
         # Create a test PDF
         try:
             pdf_buffer = create_pdf_from_text(
-                original_text="Original English text for testing",
-                translated_text=sample_text,
+                original_text_chunks=["Original English text for testing"],
+                translated_text_chunks=["Translated English text for testing"],
                 filename="font_render_test.pdf",
                 target_language=language_code,
                 language_code=language_code
@@ -1034,160 +1127,229 @@ async def get_font_monitoring_summary():
         }
 
 
-def create_pdf_from_text(original_text: str, translated_text: str, filename: str, target_language: str, language_code: str = None) -> io.BytesIO:
+def create_pdf_from_text(original_text_chunks: List[str], translated_text_chunks: List[str], filename: str, target_language: str, language_code: str = None, layout_data: List[PdfLayoutData] = None) -> io.BytesIO:
     """
-    Create a PDF with original and translated text using appropriate fonts for the target language.
+    Create a PDF with original and translated text using appropriate fonts for the target language and preserving layout.
     
     Args:
-        original_text: Original text content
-        translated_text: Translated text content
+        original_text_chunks: List of original text chunks
+        translated_text_chunks: List of translated text chunks
         filename: Original filename for reference
         target_language: Target language name for display
         language_code: Language code for font selection (e.g., 'hin_Deva', 'urd_Arab')
+        layout_data: Optional list of PdfLayoutData for layout preservation
     
     Returns:
         BytesIO buffer containing the generated PDF
     """
     buffer = io.BytesIO()
     
-    # Create PDF document
-    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=1*inch, bottomMargin=1*inch)
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.colors import black
+    from reportlab.lib.units import inch # Move inch import here
+
+    c = canvas.Canvas(buffer, pagesize=A4)
+
+    # Reconstruct full original and translated texts for approximate mapping
+    full_original_text = " ".join(original_text_chunks).strip()
+    full_translated_text = " ".join(translated_text_chunks).strip()
     
+    # Keep track of the current position in the full original text to find segments
+    current_original_char_pos = 0
+    translated_segment_map = {}
+
+    # Attempt to build a rough character-level mapping from original to translated text
+    # This is a linear approximation and may not be perfect for complex sentence restructurings
+    if full_original_text and full_translated_text:
+        original_len = len(full_original_text)
+        translated_len = len(full_translated_text)
+        length_ratio = translated_len / original_len if original_len > 0 else 1
+        
+        current_original_idx = 0
+        current_translated_idx = 0
+        
+        # Create a simplified character mapping for proportional scaling
+        # This maps original_char_index -> translated_char_index
+        char_map = {}
+        for i in range(original_len):
+            char_map[i] = int(i * length_ratio)
+        char_map[original_len] = translated_len # Ensure end maps correctly
+
+        # This map will store (original_text_start_index, original_text_end_index) -> translated_string
+        # It will be populated as we iterate elements if we can accurately find them.
+        # For now, we'll do a simple substring replacement based on the overall text.
+
+
     try:
-        # Get font system components if available
+        # Determine selected font family and variants
+        selected_font_family = 'Helvetica' # Default fallback
+        selected_font_regular = 'Helvetica'
+        selected_font_bold = 'Helvetica-Bold'
+        selected_font_italic = 'Helvetica-Oblique'
+        selected_font_bold_italic = 'Helvetica-BoldOblique'
+        
         if font_system_initialized:
-            logger.info(f"📄 Starting PDF generation with font support")
-            logger.info(f"📋 PDF Parameters: filename='{filename}', target_language='{target_language}', language_code='{language_code}'")
-            
-            style_factory = get_style_factory()
             language_mapper = get_language_mapper()
+            font_info = language_mapper.get_font_info_for_language(language_code or target_language)
+            selected_font_family = font_info['selected_font']
             
-            # Use provided language_code or try to derive from target_language
-            effective_language_code = language_code or target_language
-            logger.info(f"🔤 Effective language code for font selection: '{effective_language_code}'")
-            
-            # Get detailed font info before style creation
-            font_info = language_mapper.get_font_info_for_language(effective_language_code)
-            logger.info(f"🎯 Font selection details:")
-            logger.info(f"  - Language code: {font_info['language_code']}")
-            logger.info(f"  - Normalized code: {font_info['normalized_code']}")
-            logger.info(f"  - Preferred font: {font_info['preferred_font']}")
-            logger.info(f"  - Selected font: {font_info['selected_font']}")
-            logger.info(f"  - Is supported: {font_info['is_supported']}")
-            logger.info(f"  - Is preferred available: {font_info['is_preferred_available']}")
-            logger.info(f"  - Fallback fonts: {font_info['fallback_fonts']}")
-            
-            # Get language-specific styles
-            try:
-                logger.info(f"🎨 Creating language-specific styles for '{effective_language_code}'...")
-                language_styles = style_factory.create_styles_for_language(effective_language_code)
+            # Attempt to get specific font variants using FontRegistry's fallback mechanism
+            # If a specific variant (e.g., Bold) is not found, it will fallback to Regular or default.
+            selected_font_regular = language_mapper.font_registry.get_font_by_family_and_weight_with_fallback(selected_font_family, 'Regular') or 'Helvetica'
+            selected_font_bold = language_mapper.font_registry.get_font_by_family_and_weight_with_fallback(selected_font_family, 'Bold') or selected_font_regular
+            selected_font_italic = language_mapper.font_registry.get_font_by_family_and_weight_with_fallback(selected_font_family, 'Italic') or selected_font_regular
+            selected_font_bold_italic = language_mapper.font_registry.get_font_by_family_and_weight_with_fallback(selected_font_family, 'BoldItalic') or selected_font_bold or selected_font_italic or selected_font_regular
+
+            # Ensure these selected fonts are registered with ReportLab
+            for font_name_to_check in [selected_font_family, selected_font_regular, selected_font_bold, selected_font_italic, selected_font_bold_italic]:
+                if font_name_to_check and not pdfmetrics.getFont(font_name_to_check):
+                    try:
+                        font_info_to_register = language_mapper.font_registry.get_font_info(font_name_to_check)
+                        if font_info_to_register and os.path.exists(font_info_to_register.file_path):
+                            pdfmetrics.registerFont(TTFont(font_name_to_check, font_info_to_register.file_path))
+                            logger.info(f"Registered dynamically: {font_name_to_check} from {font_info_to_register.file_path}")
+                        else:
+                            logger.warning(f"Could not find font file for dynamic registration: {font_name_to_check}")
+                    except Exception as e:
+                        logger.error(f"Failed to dynamically register {font_name_to_check}: {e}")
+
+        # Function to get the appropriate font name based on style flags
+        def get_current_font_name(is_bold: bool, is_italic: bool) -> str:
+            if is_bold and is_italic: return selected_font_bold_italic
+            if is_bold: return selected_font_bold
+            if is_italic: return selected_font_italic
+            return selected_font_regular
+
+        # Use a simple ReportLab canvas for direct drawing if layout_data is available
+        if layout_data:
+            logger.info(f"📄 Starting PDF generation with font support and layout preservation")
+            for page_idx, page_layout in enumerate(layout_data):
+                c.setPageSize((page_layout.width, page_layout.height))
                 
-                # Extract individual styles
-                title_style = language_styles['title']
-                heading_style = language_styles['heading1']
-                body_style = language_styles['body']
-                translated_style = language_styles['body']
-                
-                logger.info(f"✅ Successfully created {len(language_styles)} language-specific styles")
-                logger.info(f"📝 Style details:")
-                logger.info(f"  - Title style font: {title_style.fontName}")
-                logger.info(f"  - Heading style font: {heading_style.fontName}")
-                logger.info(f"  - Body style font: {body_style.fontName}")
-                logger.info(f"  - Translated text style font: {translated_style.fontName}")
-                
-            except Exception as e:
-                logger.error(f"❌ Failed to create language-specific styles for '{effective_language_code}': {e}")
-                logger.warning(f"🔄 Falling back to default styles...")
-                
-                # Fall back to default styles
-                language_styles = style_factory.create_fallback_styles()
-                title_style = language_styles['title']
-                heading_style = language_styles['heading1']
-                body_style = language_styles['body']
-                translated_style = language_styles['body']
-                
-                logger.info(f"✅ Created fallback styles:")
-                logger.info(f"  - Title style font: {title_style.fontName}")
-                logger.info(f"  - Heading style font: {heading_style.fontName}")
-                logger.info(f"  - Body style font: {body_style.fontName}")
-                logger.info(f"  - Translated text style font: {translated_style.fontName}")
+                # For debugging: draw original text for comparison
+                # c.setFillColorRGB(0.5, 0.5, 0.5)
+                # c.setFont('Helvetica', 8)
+                # c.drawString(10, page_layout.height - 20, f"Original Page {page_layout.page_number + 1}")
+
+                # Reset current_original_char_pos for each page if we want to align by page content
+                # For simplicity, we assume continuous text for full_original_text and full_translated_text
+                # If we need page-level translation, this would be more complex.
+
+                for element in page_layout.text_elements:
+                    original_text_segment = element.text
+                    
+                    # Find the start index of the current original_text_segment within the full_original_text
+                    # This is still a heuristic. For truly robust layout, a token aligner is needed.
+                    # For now, we'll use a simple find and assume order is preserved.
+                    start_idx_in_full_original = full_original_text.find(original_text_segment, current_original_char_pos)
+
+                    if start_idx_in_full_original != -1:
+                        end_idx_in_full_original = start_idx_in_full_original + len(original_text_segment)
+
+                        # Calculate corresponding indices in translated text using the char_map
+                        translated_start_idx = char_map.get(start_idx_in_full_original, 0)
+                        translated_end_idx = char_map.get(end_idx_in_full_original, translated_len)
+                        
+                        # Extract the translated segment
+                        translated_text_segment = full_translated_text[translated_start_idx:translated_end_idx]
+                        current_original_char_pos = end_idx_in_full_original # Update pointer
+
+                        if translated_text_segment.strip():
+                            current_font_name = get_current_font_name(element.is_bold, element.is_italic)
+
+                            # ReportLab expects (R, G, B) in range (0,1) for setFillColorRGB
+                            r, g, b = element.color
+                            c.setFillColorRGB(r, g, b)
+                            c.setFont(current_font_name, element.font_size)
+
+                            # Adjust Y coordinate
+                            x, y_top = element.bbox[0], element.bbox[1]
+                            y_reportlab_baseline = page_layout.height - y_top - element.font_size
+                            
+                            # Implement basic text wrapping
+                            words = translated_text_segment.strip().split(' ')
+                            current_line_words = []
+                            current_line_width = 0
+                            available_width = element.bbox[2] - element.bbox[0]
+                            line_height = element.font_size * 1.2 # 120% of font size for line spacing
+
+                            for word in words:
+                                # Calculate width of word plus a space
+                                word_width = c.stringWidth(word + " ", current_font_name, element.font_size)
+
+                                if current_line_width + word_width > available_width and current_line_words:
+                                    # Draw the current line and start a new one
+                                    c.drawString(x, y_reportlab_baseline, " ".join(current_line_words))
+                                    y_reportlab_baseline -= line_height # Move down for the next line
+                                    current_line_words = [word]
+                                    current_line_width = c.stringWidth(word + " ", current_font_name, element.font_size)
+                                else:
+                                    current_line_words.append(word)
+                                    current_line_width += word_width
+                            
+                            # Draw any remaining text in the current line
+                            if current_line_words:
+                                c.drawString(x, y_reportlab_baseline, " ".join(current_line_words))
+
+                c.showPage()
+            logger.info(f"✅ Successfully created PDF with layout preservation.")
+
         else:
-            # Font system not initialized, use default ReportLab styles
-            logger.warning("⚠️ Font system not initialized, using default ReportLab styles")
-            logger.warning(f"📋 PDF will be generated without Indian language font support")
-            logger.info(f"🔄 Using system fonts for language: '{target_language}'")
-            styles = getSampleStyleSheet()
+            # Canvas-based fallback if no layout data is provided
+            logger.warning("⚠️ No layout data provided, falling back to simple canvas rendering.")
+            c.setPageSize(A4) # Reset to default A4 if no layout data
+            width, height = A4
+            margin = 1 * inch
+            y_position = height - margin
+            line_height = 14
+
+            c.setFont(get_current_font_name(False, False), 16)
+            c.drawString(margin, y_position, "PDF Translation Result (Simple Layout)")
+            y_position -= 2 * line_height
+
+            c.setFont(get_current_font_name(False, False), 12)
+            c.drawString(margin, y_position, f"Original File: {filename}")
+            y_position -= line_height
+            c.drawString(margin, y_position, f"Target Language: {target_language}")
+            y_position -= 2 * line_height
+
+            c.setFont(get_current_font_name(True, False), 12) # Bold
+            c.drawString(margin, y_position, "Original Text:")
+            y_position -= line_height
+            c.setFont(get_current_font_name(False, False), 10)
+            for chunk in original_text_chunks:
+                for line in chunk.split('\n'):
+                    if y_position < margin:
+                        c.showPage()
+                        c.setPageSize(A4)
+                        y_position = height - margin
+                    c.drawString(margin, y_position, line.strip())
+                    y_position -= line_height
+            y_position -= line_height
+
+            c.setFont(get_current_font_name(True, False), 12) # Bold
+            c.drawString(margin, y_position, "Translated Text:")
+            y_position -= line_height
+            c.setFont(get_current_font_name(False, False), 10)
+            for chunk in translated_text_chunks:
+                for line in chunk.split('\n'):
+                    if y_position < margin:
+                        c.showPage()
+                        c.setPageSize(A4)
+                        y_position = height - margin
+                    c.drawString(margin, y_position, line.strip())
+                    y_position -= line_height
+            y_position -= line_height
+            c.showPage()
+            logger.info(f"✅ Successfully created PDF with simple canvas rendering.")
             
-            title_style = ParagraphStyle(
-                'CustomTitle',
-                parent=styles['Heading1'],
-                fontSize=16,
-                spaceAfter=20,
-                textColor='#2563eb'
-            )
-            
-            heading_style = ParagraphStyle(
-                'CustomHeading',
-                parent=styles['Heading2'],
-                fontSize=14,
-                spaceAfter=12,
-                textColor='#374151'
-            )
-            
-            body_style = ParagraphStyle(
-                'CustomBody',
-                parent=styles['Normal'],
-                fontSize=11,
-                spaceAfter=12,
-                leading=16
-            )
-            
-            translated_style = body_style
-        
-        # Build content
-        content = []
-        
-        # Title
-        content.append(Paragraph("PDF Translation Result", title_style))
-        content.append(Spacer(1, 12))
-        
-        # File info
-        content.append(Paragraph(f"<b>Original File:</b> {filename}", body_style))
-        content.append(Paragraph(f"<b>Target Language:</b> {target_language}", body_style))
-        if language_code:
-            content.append(Paragraph(f"<b>Language Code:</b> {language_code}", body_style))
-        content.append(Spacer(1, 20))
-        
-        # Original text section
-        content.append(Paragraph("Original Text", heading_style))
-        # Split long text into paragraphs
-        original_paragraphs = original_text.split('\n\n') if '\n\n' in original_text else [original_text]
-        for para in original_paragraphs:
-            if para.strip():
-                # Use regular body style for original English text
-                content.append(Paragraph(para.strip(), body_style))
-        
-        content.append(Spacer(1, 20))
-        
-        # Translated text section
-        content.append(Paragraph("Translated Text", heading_style))
-        # Split long text into paragraphs
-        translated_paragraphs = translated_text.split('\n\n') if '\n\n' in translated_text else [translated_text]
-        
-        # Use standard ReportLab Paragraphs for all translated text
-        for para in translated_paragraphs:
-            if para.strip():
-                content.append(Paragraph(para.strip(), translated_style))
-        
-        # Build PDF
-        logger.info(f"🔨 Building PDF document with {len(content)} elements...")
-        doc.build(content)
+        c.save()
         buffer.seek(0)
         
         # Log final PDF creation details
         pdf_size = len(buffer.getvalue())
         logger.info(f"✅ Successfully created PDF:")
-        logger.info(f"  - Elements: {len(content)}")
+        logger.info(f"  - Elements: {sum(len(p.text_elements) for p in layout_data) if layout_data else 0} text elements processed")
         logger.info(f"  - Size: {pdf_size} bytes ({pdf_size / 1024:.1f} KB)")
         logger.info(f"  - Language: {target_language}")
         logger.info(f"  - Font system used: {'Yes' if font_system_initialized else 'No'}")
@@ -1198,18 +1360,54 @@ def create_pdf_from_text(original_text: str, translated_text: str, filename: str
         logger.error(f"Error creating PDF: {e}")
         # Create a simple fallback PDF in case of errors
         try:
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import inch # Re-add inch import
+
+            doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=1*inch, bottomMargin=1*inch)
             styles = getSampleStyleSheet()
+            
+            # Fallback to default ReportLab font for error document
+            default_font = "Helvetica"
+            if not pdfmetrics.getFont(default_font):
+                pdfmetrics.registerFont(TTFont(default_font, "Helvetica")) # Ensure Helvetica is registered
+            
+            title_style = ParagraphStyle(
+                'ErrorTitle',
+                parent=styles['Title'],
+                fontName=default_font,
+                fontSize=16,
+                textColor='red'
+            )
+            heading_style = ParagraphStyle(
+                'ErrorHeading',
+                parent=styles['Heading2'],
+                fontName=default_font,
+                fontSize=14,
+                textColor='darkred'
+            )
+            body_style = ParagraphStyle(
+                'ErrorNormal',
+                parent=styles['Normal'],
+                fontName=default_font,
+                fontSize=11,
+                textColor='black'
+            )
+
             simple_content = [
-                Paragraph("PDF Translation Result", styles['Title']),
+                Paragraph("PDF Translation Result (Error Fallback)", title_style),
                 Spacer(1, 12),
-                Paragraph(f"Original File: {filename}", styles['Normal']),
-                Paragraph(f"Target Language: {target_language}", styles['Normal']),
+                Paragraph(f"Original File: {filename}", body_style),
+                Paragraph(f"Target Language: {target_language}", body_style),
                 Spacer(1, 20),
-                Paragraph("Original Text", styles['Heading2']),
-                Paragraph(original_text, styles['Normal']),
+                Paragraph("Error Details:", heading_style),
+                Paragraph(f"An error occurred during PDF generation: {e}", body_style),
                 Spacer(1, 20),
-                Paragraph("Translated Text", styles['Heading2']),
-                Paragraph(translated_text, styles['Normal'])
+                Paragraph("Original Text:", heading_style),
+                Paragraph(full_original_text, body_style),
+                Spacer(1, 20),
+                Paragraph("Translated Text:", heading_style),
+                Paragraph(full_translated_text, body_style)
             ]
             doc.build(simple_content)
             buffer.seek(0)
@@ -1269,11 +1467,99 @@ async def translate_pdf_enhanced(
         # Read PDF content
         pdf_content = await file.read()
         
-        # Enhanced text extraction with multiple methods
-        extracted_text, extraction_method = extract_text_from_pdf(pdf_content, max_pages=2)
-        
+        # Enhanced text extraction with multiple methods, including layout data
+        extracted_text, extraction_method, layout_data = extract_text_from_pdf(pdf_content, max_pages=2)
         logger.info(f"Text extracted using: {extraction_method}")
         
+        # If layout_data is available, translate each text element individually
+        if layout_data and any(p.text_elements for p in layout_data):
+            all_elements = []
+            for page in layout_data:
+                all_elements.extend(page.text_elements)
+            # Remove empty/duplicate texts
+            seen = set()
+            element_texts = []
+            element_indices = []
+            for idx, el in enumerate(all_elements):
+                t = el.text.strip()
+                if t and t not in seen:
+                    element_texts.append(t)
+                    element_indices.append(idx)
+                    seen.add(t)
+                else:
+                    element_indices.append(None)  # Mark as duplicate/empty
+            # Translate in batches
+            batch_size = 10
+            translated_texts = []
+            for i in range(0, len(element_texts), batch_size):
+                batch = element_texts[i:i+batch_size]
+                try:
+                    pre = ip.preprocess_batch(batch, src_lang="eng_Latn", tgt_lang=target_language)
+                    inputs = tokenizer(
+                        pre,
+                        truncation=True,
+                        padding="longest",
+                        return_tensors="pt",
+                        return_attention_mask=True,
+                        max_length=512,
+                    ).to(DEVICE)
+                    with torch.no_grad():
+                        generated_tokens = model.generate(
+                            input_ids=inputs["input_ids"],
+                            attention_mask=inputs["attention_mask"],
+                            use_cache=False,
+                            min_length=0,
+                            max_length=256,
+                            num_beams=3,
+                            num_return_sequences=1,
+                            do_sample=False,
+                        )
+                    decoded = tokenizer.batch_decode(
+                        generated_tokens.detach().cpu().tolist(),
+                        skip_special_tokens=True,
+                        clean_up_tokenization_spaces=True,
+                    )
+                    batch_trans = ip.postprocess_batch(decoded, lang=target_language)
+                    translated_texts.extend(batch_trans)
+                except Exception as batch_error:
+                    logger.error(f"Error translating element batch: {batch_error}")
+                    translated_texts.extend(["[Translation failed]"] * len(batch))
+            # Map translations back to all_elements order
+            translated_elements = []
+            trans_idx = 0
+            for idx in element_indices:
+                if idx is not None:
+                    translated_elements.append(translated_texts[trans_idx])
+                    trans_idx += 1
+                else:
+                    translated_elements.append("")
+            # For download and PDF generation, pass these lists
+            return {
+                "success": True,
+                "filename": file.filename,
+                "pages_processed": len(layout_data),
+                "extracted_text": extracted_text,
+                "translated_text": " ".join(translated_elements),
+                "target_language": target_language,
+                "source_language": "eng_Latn",
+                "language_code": target_language,
+                "extraction_method": extraction_method,
+                "text_length": len(extracted_text),
+                "chunks_processed": len(translated_elements),
+                "memory_management": "element-wise",
+                "duplicates_removed": True,
+                "download_available": True,
+                "layout_data_available": True,
+                "font_support": {
+                    "enabled": font_system_initialized,
+                },
+                "original_text_elements": [el.text for el in all_elements],
+                "translated_text_elements": translated_elements,
+                "layout_data": [p.dict() for p in layout_data] if layout_data else []
+            }
+        # Fallback: old chunk-based translation
+        # ... existing code ...
+
         # Clean up and remove duplicates from extracted text
         extracted_text = remove_duplicates_from_text(extracted_text.strip())
         
@@ -1374,10 +1660,14 @@ async def translate_pdf_enhanced(
             "memory_management": "chunking" if len(extracted_text) > 1000 else "standard",
             "duplicates_removed": True,
             "download_available": True,
+            "layout_data_available": bool(layout_data),
             "font_support": {
                 "enabled": font_system_initialized,
                 "font_info": font_info
-            }
+            },
+            "original_text_chunks": text_chunks,
+            "translated_text_chunks": all_translations,
+            "layout_data": [p.dict() for p in layout_data] if layout_data else [] # Include layout data
         }
 
     except Exception as e:
@@ -1387,46 +1677,384 @@ async def translate_pdf_enhanced(
 
 @app.post("/download-translated-pdf")
 async def download_translated_pdf_endpoint(
-    original_text: str = Form(...),
-    translated_text: str = Form(...),
     filename: str = Form(...),
+    original_text_chunks_json: str = Form(...),
+    translated_text_chunks_json: str = Form(...),
     target_language: str = Form(...),
+    layout_data_json: str = Form(...), # Receive layout data as JSON string
     language_code: Optional[str] = Form(None)
 ):
-    """Generate and download translated PDF with enhanced font support"""
+    logger.info(f"Download PDF endpoint called for {filename}")
+
     try:
-        # Use target_language as language_code if not provided
-        effective_language_code = language_code or target_language
-        
-        # Log font selection for debugging
-        if font_system_initialized:
-            try:
-                language_mapper = get_language_mapper()
-                font_info = language_mapper.get_font_info_for_language(effective_language_code)
-                logger.info(f"Generating PDF for {effective_language_code} using font: {font_info['selected_font']}")
-            except Exception as e:
-                logger.warning(f"Could not get font info for PDF generation: {e}")
-        
-        # Create PDF with both original and translated text using font support
+        original_text_chunks = json.loads(original_text_chunks_json)
+    except json.JSONDecodeError as e:
+        logger.error(f"Error decoding original_text_chunks_json: {e}")
+        raise HTTPException(status_code=422, detail=f"Invalid original_text_chunks_json: {e}")
+
+    try:
+        translated_text_chunks = json.loads(translated_text_chunks_json)
+    except json.JSONDecodeError as e:
+        logger.error(f"Error decoding translated_text_chunks_json: {e}")
+        raise HTTPException(status_code=422, detail=f"Invalid translated_text_chunks_json: {e}")
+    
+    # Deserialize layout_data
+    try:
+        # Directly deserialize to a list of dicts, then convert to PdfLayoutData
+        layout_data_dicts = json.loads(layout_data_json)
+        layout_data = [PdfLayoutData(**item) for item in layout_data_dicts]
+    except json.JSONDecodeError as e:
+        logger.error(f"Error decoding layout_data_json: {e}")
+        raise HTTPException(status_code=422, detail=f"Invalid layout_data_json: {e}")
+    except TypeError as e:
+        logger.error(f"Type error during layout_data deserialization: {e}")
+        raise HTTPException(status_code=422, detail=f"Invalid layout_data structure: {e}")
+
+    effective_language_code = language_code if language_code else target_language
+
+    try:
         pdf_buffer = create_pdf_from_text(
-            original_text=original_text,
-            translated_text=translated_text,
+            original_text_chunks=original_text_chunks,
+            translated_text_chunks=translated_text_chunks,
             filename=filename,
             target_language=target_language,
-            language_code=effective_language_code
+            language_code=effective_language_code,
+            layout_data=layout_data
         )
-        
-        # Create filename for download
-        base_name = os.path.splitext(filename)[0]
-        download_filename = f"{base_name}_translated_{target_language}.pdf"
-        
-        # Return as streaming response
-        return StreamingResponse(
-            pdf_buffer,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename={download_filename}"}
-        )
-        
+
+        pdf_buffer.seek(0)
+        headers = {
+            "Content-Disposition": f"attachment; filename=\"translated_{filename}\""
+        }
+        return StreamingResponse(iter([pdf_buffer.getvalue()]), media_type="application/pdf", headers=headers)
     except Exception as e:
-        logger.error(f"❌ PDF generation error: {e}")
-        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
+        logger.error(f"Error in download_translated_pdf_endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {e}")
+
+
+@app.post("/translate-and-download-pdf")
+async def translate_and_download_pdf(
+    file: UploadFile = File(...),
+    target_language: str = Form(...)
+):
+    """Directly translate a PDF and return the translated PDF as a download, preserving layout."""
+    global tokenizer, model, ip, DEVICE
+    if not all([tokenizer, model, ip]):
+        raise HTTPException(status_code=503, detail="Models are still loading. Please try again in a moment.")
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    try:
+        pdf_content = await file.read()
+        extracted_text, extraction_method, layout_data = extract_text_from_pdf(pdf_content, max_pages=2)
+        if not layout_data or not any(p.text_elements for p in layout_data):
+            raise HTTPException(status_code=422, detail="Could not extract layout from PDF. Only text-based PDFs are supported for layout-preserving translation.")
+        # Flatten all text elements
+        all_elements = []
+        for page in layout_data:
+            all_elements.extend(page.text_elements)
+        # Remove empty/duplicate texts
+        seen = set()
+        element_texts = []
+        element_indices = []
+        for idx, el in enumerate(all_elements):
+            t = el.text.strip()
+            if t and t not in seen:
+                element_texts.append(t)
+                element_indices.append(idx)
+                seen.add(t)
+            else:
+                element_indices.append(None)
+        # Translate in batches
+        batch_size = 10
+        translated_texts = []
+        for i in range(0, len(element_texts), batch_size):
+            batch = element_texts[i:i+batch_size]
+            try:
+                pre = ip.preprocess_batch(batch, src_lang="eng_Latn", tgt_lang=target_language)
+                inputs = tokenizer(
+                    pre,
+                    truncation=True,
+                    padding="longest",
+                    return_tensors="pt",
+                    return_attention_mask=True,
+                    max_length=512,
+                ).to(DEVICE)
+                with torch.no_grad():
+                    generated_tokens = model.generate(
+                        input_ids=inputs["input_ids"],
+                        attention_mask=inputs["attention_mask"],
+                        use_cache=False,
+                        min_length=0,
+                        max_length=256,
+                        num_beams=3,
+                        num_return_sequences=1,
+                        do_sample=False,
+                    )
+                decoded = tokenizer.batch_decode(
+                    generated_tokens.detach().cpu().tolist(),
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=True,
+                )
+                batch_trans = ip.postprocess_batch(decoded, lang=target_language)
+                translated_texts.extend(batch_trans)
+            except Exception as batch_error:
+                logger.error(f"Error translating element batch: {batch_error}")
+                translated_texts.extend(["[Translation failed]"] * len(batch))
+        # Map translations back to all_elements order
+        translated_elements = []
+        trans_idx = 0
+        for idx in element_indices:
+            if idx is not None:
+                translated_elements.append(translated_texts[trans_idx])
+                trans_idx += 1
+            else:
+                translated_elements.append("")
+        # Generate the PDF directly
+        pdf_buffer = create_pdf_from_text(
+            original_text_chunks=[el.text for el in all_elements],
+            translated_text_chunks=translated_elements,
+            filename=file.filename,
+            target_language=target_language,
+            language_code=target_language,
+            layout_data=layout_data
+        )
+        pdf_buffer.seek(0)
+        headers = {
+            "Content-Disposition": f"attachment; filename=translated_{file.filename}"
+        }
+        return StreamingResponse(iter([pdf_buffer.getvalue()]), media_type="application/pdf", headers=headers)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in direct PDF translation: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate translated PDF: {e}")
+
+
+@app.post("/translate-pdf-live-preview")
+async def translate_pdf_live_preview(
+    file: UploadFile = File(...),
+    target_language: str = Form(...)
+):
+    """Stream translation results element-by-element for live preview (SSE) with layout preservation."""
+    global tokenizer, model, ip, DEVICE
+    if not all([tokenizer, model, ip]):
+        raise HTTPException(status_code=503, detail="Models are still loading. Please try again in a moment.")
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    pdf_content = await file.read()
+    # Process ALL pages for large files, not just first 2
+    extracted_text, extraction_method, layout_data = extract_text_from_pdf(pdf_content, max_pages=10)
+    
+    # Handle both layout-based and simple text-based PDFs
+    if layout_data and any(p.text_elements for p in layout_data):
+        # Layout-based processing (preferred)
+        all_elements = []
+        for page in layout_data:
+            all_elements.extend(page.text_elements)
+        # Remove empty/duplicate texts
+        seen = set()
+        element_texts = []
+        element_indices = []
+        for idx, el in enumerate(all_elements):
+            t = el.text.strip()
+            if t and t not in seen:
+                element_texts.append(t)
+                element_indices.append(idx)
+                seen.add(t)
+            else:
+                element_indices.append(None)
+    else:
+        # Fallback to simple text-based processing with proper document layout
+        logger.info(f"Live preview: No layout data available, creating proper document layout for simple text")
+        
+        # Create proper document structure with paragraphs
+        paragraphs = [p.strip() for p in extracted_text.split('\n\n') if p.strip()]
+        if not paragraphs:
+            paragraphs = [extracted_text] if extracted_text.strip() else ["No text found"]
+        
+        element_texts = []
+        element_indices = []
+        all_elements = []
+        
+        # Document layout parameters
+        page_width = 500
+        margin_x = 50
+        margin_y = 100
+        line_height = 18
+        paragraph_spacing = 30
+        current_y = margin_y
+        
+        for paragraph_idx, paragraph in enumerate(paragraphs):
+            # Determine if this is a title, heading, or body text
+            is_title = paragraph_idx == 0 and len(paragraph) < 100
+            is_heading = paragraph.startswith('What is') or paragraph.startswith('How') or paragraph.startswith('Why')
+            
+            if is_title:
+                # Center the title
+                font_size = 20
+                font_weight = 'bold'
+                text_align = 'center'
+                current_y += 20
+            elif is_heading:
+                # Left-align headings
+                font_size = 16
+                font_weight = 'bold'
+                text_align = 'left'
+                current_y += paragraph_spacing
+            else:
+                # Justify body text
+                font_size = 12
+                font_weight = 'normal'
+                text_align = 'justify'
+                current_y += paragraph_spacing
+            
+            # Split paragraph into words for word-by-word translation
+            words = paragraph.split()
+            current_x = margin_x
+            current_line_y = current_y
+            
+            for word_idx, word in enumerate(words):
+                if word.strip():
+                    # Calculate word width (approximate)
+                    word_width = len(word) * 8 + 5  # Approximate character width
+                    
+                    # Check if word fits on current line
+                    if current_x + word_width > page_width - margin_x:
+                        # Move to next line
+                        current_x = margin_x
+                        current_line_y += line_height
+                    
+                    element_texts.append(word)
+                    element_indices.append(len(element_texts) - 1)
+                    
+                    mock_element = {
+                        "text": word,
+                        "bbox": [current_x, current_line_y, current_x + word_width, current_line_y + line_height],
+                        "font_name": "Helvetica",
+                        "font_size": font_size,
+                        "color": [0, 0, 0],
+                        "is_bold": font_weight == 'bold',
+                        "is_italic": False,
+                        "text_align": text_align,
+                        "paragraph_index": paragraph_idx,
+                        "word_index": word_idx,
+                        "is_title": is_title,
+                        "is_heading": is_heading
+                    }
+                    all_elements.append(mock_element)
+                    
+                    # Move to next word position
+                    current_x += word_width + 5  # 5px space between words
+            
+            # Update current_y for next paragraph
+            current_y = current_line_y + line_height
+    async def event_generator() -> AsyncGenerator[str, None]:
+        # First, send layout information
+        layout_info = {
+            "type": "layout_info",
+            "total_elements": len(element_texts),
+            "layout_data": []
+        }
+        
+        # Add layout data for each element
+        for i, (text, idx) in enumerate(zip(element_texts, element_indices)):
+            if idx is not None and all_elements:
+                element = all_elements[idx]
+                layout_info["layout_data"].append({
+                    "index": i,
+                    "text": text,
+                    "bbox": element.bbox if hasattr(element, 'bbox') else element.get('bbox', [0, 0, 100, 20]),
+                    "font_name": element.font_name if hasattr(element, 'font_name') else element.get('font_name', 'Helvetica'),
+                    "font_size": element.font_size if hasattr(element, 'font_size') else element.get('font_size', 12),
+                    "color": element.color if hasattr(element, 'color') else element.get('color', [0, 0, 0]),
+                    "is_bold": element.is_bold if hasattr(element, 'is_bold') else element.get('is_bold', False),
+                    "is_italic": element.is_italic if hasattr(element, 'is_italic') else element.get('is_italic', False)
+                })
+            else:
+                # Mock layout for simple text
+                layout_info["layout_data"].append({
+                    "index": i,
+                    "text": text,
+                    "bbox": [50 + (i * 60), 100, 50 + (i * 60) + 50, 120],
+                    "font_name": "Helvetica",
+                    "font_size": 12,
+                    "color": [0, 0, 0],
+                    "is_bold": False,
+                    "is_italic": False
+                })
+        
+        yield f"data: {json.dumps(layout_info)}\n\n"
+        
+        # Then stream translations word by word
+        batch_size = 5  # Optimal batch size for large files
+        trans_idx = 0
+        total_batches = (len(element_texts) + batch_size - 1) // batch_size
+        
+        for i in range(0, len(element_texts), batch_size):
+            batch = element_texts[i:i+batch_size]
+            try:
+                pre = ip.preprocess_batch(batch, src_lang="eng_Latn", tgt_lang=target_language)
+                inputs = tokenizer(
+                    pre,
+                    truncation=True,
+                    padding="longest",
+                    return_tensors="pt",
+                    return_attention_mask=True,
+                    max_length=512,
+                ).to(DEVICE)
+                with torch.no_grad():
+                    generated_tokens = model.generate(
+                        input_ids=inputs["input_ids"],
+                        attention_mask=inputs["attention_mask"],
+                        use_cache=False,
+                        min_length=0,
+                        max_length=256,
+                        num_beams=3,
+                        num_return_sequences=1,
+                        do_sample=False,
+                    )
+                decoded = tokenizer.batch_decode(
+                    generated_tokens.detach().cpu().tolist(),
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=True,
+                )
+                batch_trans = ip.postprocess_batch(decoded, lang=target_language)
+            except Exception as batch_error:
+                logger.error(f"Error translating element batch: {batch_error}")
+                batch_trans = ["[Translation failed]"] * len(batch)
+            
+            # Stream each element in the batch with layout info
+            for j, orig in enumerate(batch):
+                element_idx = i + j
+                layout_element = layout_info["layout_data"][element_idx] if element_idx < len(layout_info["layout_data"]) else None
+                
+                event = {
+                    "type": "translation_update",
+                    "element_index": trans_idx,
+                    "original_text": orig,
+                    "translated_text": batch_trans[j],
+                    "layout": layout_element,
+                    "progress": {
+                        "current": trans_idx + 1,
+                        "total": len(element_texts),
+                        "percentage": round(((trans_idx + 1) / len(element_texts)) * 100, 1),
+                        "batch_progress": f"Batch {i//batch_size + 1}/{total_batches}"
+                    }
+                }
+                yield f"data: {json.dumps(event)}\n\n"
+                trans_idx += 1
+                
+                # Add small delay for better visual effect (reduced for large files)
+                import asyncio
+                await asyncio.sleep(0.05)
+        
+        # Send completion event
+        completion_event = {
+            "type": "translation_complete",
+            "total_translated": trans_idx
+        }
+        yield f"data: {json.dumps(completion_event)}\n\n"
+    
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+app.include_router(pdf_translation_router)

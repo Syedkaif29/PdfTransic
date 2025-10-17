@@ -2,6 +2,7 @@
 fastapi
 uvicorn[standard]
 python-multipart
+pydantic
 
 # ML/AI dependencies
 torch>=2.5
@@ -19,6 +20,11 @@ indic-nlp-library-itt
 
 # PDF processing
 PyPDF2
+pymupdf
+pytesseract
+reportlab
+python-docx
+
 
 # Additional dependencies that might be needed
 tokenizers
