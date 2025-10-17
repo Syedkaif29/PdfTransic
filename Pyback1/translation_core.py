@@ -186,29 +186,61 @@ def create_pdf_from_text(original_text_chunks: List[str], translated_text_chunks
     """
     raise NotImplementedError("This function should be imported from main.py to avoid circular imports")
 
-def chunk_text(text: str, max_chunk_size: int = 500) -> List[str]:
+def chunk_text(text: str, max_chunk_size: int = 200) -> List[str]:
+    """Smaller chunk text chunking for faster translation performance"""
+    # Use smaller sentence-based chunking for better speed
     sentences = [s.strip() for s in text.replace('\n', ' ').split('.') if s.strip()]
+    
     chunks = []
     current_chunk = ""
+    
     for sentence in sentences:
-        if len(current_chunk) + len(sentence) > max_chunk_size and current_chunk:
+        # Use smaller chunks for faster processing
+        test_chunk = current_chunk + ". " + sentence if current_chunk else sentence
+        if len(test_chunk) > max_chunk_size and current_chunk:
             chunks.append(current_chunk.strip())
             current_chunk = sentence
         else:
-            current_chunk += ". " + sentence if current_chunk else sentence
+            current_chunk = test_chunk
+    
+    # Add the last chunk
     if current_chunk:
         chunks.append(current_chunk.strip())
+    
+    # If chunks are still too large, split further by phrases
+    if any(len(chunk) > max_chunk_size for chunk in chunks):
+        smaller_chunks = []
+        for chunk in chunks:
+            if len(chunk) <= max_chunk_size:
+                smaller_chunks.append(chunk)
+            else:
+                # Split by commas and semicolons for smaller phrases
+                phrases = [p.strip() for p in chunk.replace(';', ',').split(',') if p.strip()]
+                current_phrase_chunk = ""
+                for phrase in phrases:
+                    test_phrase = current_phrase_chunk + ", " + phrase if current_phrase_chunk else phrase
+                    if len(test_phrase) > max_chunk_size and current_phrase_chunk:
+                        smaller_chunks.append(current_phrase_chunk.strip())
+                        current_phrase_chunk = phrase
+                    else:
+                        current_phrase_chunk = test_phrase
+                if current_phrase_chunk:
+                    smaller_chunks.append(current_phrase_chunk.strip())
+        chunks = smaller_chunks
+    
+    # Final fallback to word-based chunking if needed
     if not chunks and text:
         words = text.split()
         current_chunk = ""
         for word in words:
-            if len(current_chunk) + len(word) > max_chunk_size and current_chunk:
+            if len(current_chunk) + len(word) + 1 > max_chunk_size and current_chunk:
                 chunks.append(current_chunk.strip())
                 current_chunk = word
             else:
                 current_chunk += " " + word if current_chunk else word
         if current_chunk:
             chunks.append(current_chunk.strip())
+    
     return chunks if chunks else [text]
 
 def remove_duplicates_from_text(text: str) -> str:

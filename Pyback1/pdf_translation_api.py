@@ -346,6 +346,117 @@ async def translate_pdf_live_preview(
         yield f"data: {json.dumps(completion_event)}\n\n"
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
+@router.post("/translate-batch")
+async def translate_batch(
+    files: List[UploadFile] = File(...),
+    target_language: str = Form(...)
+):
+    """Batch translate multiple PDF files"""
+    global tokenizer, model, ip, DEVICE
+    if not all([tokenizer, model, ip]):
+        raise HTTPException(status_code=503, detail="Models are still loading. Please try again in a moment.")
+    
+    if len(files) > 5:  # Limit batch size
+        raise HTTPException(status_code=400, detail="Maximum 5 files allowed per batch")
+    
+    results = []
+    
+    for i, file in enumerate(files):
+        if not file.filename.lower().endswith('.pdf'):
+            results.append({
+                "filename": file.filename,
+                "success": False,
+                "error": "Only PDF files are supported"
+            })
+            continue
+            
+        try:
+            pdf_content = await file.read()
+            extracted_text, extraction_method, layout_data = extract_text_from_pdf(pdf_content, max_pages=2)
+            
+            if not extracted_text.strip():
+                results.append({
+                    "filename": file.filename,
+                    "success": False,
+                    "error": "Could not extract text from PDF"
+                })
+                continue
+            
+            # Process translation (simplified for batch)
+            cleaned_text = remove_duplicates_from_text(extracted_text)
+            text_chunks = chunk_text(cleaned_text, max_chunk_size=300)  # Smaller chunks for batch
+            
+            all_translations = []
+            batch_size = 5
+            
+            for j in range(0, len(text_chunks), batch_size):
+                batch = text_chunks[j:j+batch_size]
+                try:
+                    pre = ip.preprocess_batch(batch, src_lang="eng_Latn", tgt_lang=target_language)
+                    inputs = tokenizer(
+                        pre,
+                        truncation=True,
+                        padding="longest",
+                        return_tensors="pt",
+                        return_attention_mask=True,
+                        max_length=256,  # Reduced for batch processing
+                    ).to(DEVICE)
+                    
+                    with torch.no_grad():
+                        generated_tokens = model.generate(
+                            input_ids=inputs["input_ids"],
+                            attention_mask=inputs["attention_mask"],
+                            use_cache=False,
+                            min_length=0,
+                            max_length=128,  # Reduced for batch processing
+                            num_beams=2,  # Reduced for speed
+                            num_return_sequences=1,
+                            do_sample=False,
+                        )
+                    
+                    decoded = tokenizer.batch_decode(
+                        generated_tokens.detach().cpu().tolist(),
+                        skip_special_tokens=True,
+                        clean_up_tokenization_spaces=True,
+                    )
+                    
+                    batch_trans = ip.postprocess_batch(decoded, lang=target_language)
+                    all_translations.extend(batch_trans)
+                    
+                except Exception as batch_error:
+                    logger.error(f"Error in batch translation: {batch_error}")
+                    all_translations.extend(["[Translation failed]"] * len(batch))
+            
+            translated_text = ' '.join(all_translations)
+            
+            results.append({
+                "filename": file.filename,
+                "success": True,
+                "extracted_text": extracted_text[:500] + "..." if len(extracted_text) > 500 else extracted_text,
+                "translated_text": translated_text,
+                "target_language": target_language,
+                "extraction_method": extraction_method,
+                "chunks_processed": len(text_chunks),
+                "file_index": i + 1,
+                "total_files": len(files)
+            })
+            
+        except Exception as e:
+            logger.error(f"Error processing file {file.filename}: {e}")
+            results.append({
+                "filename": file.filename,
+                "success": False,
+                "error": str(e)
+            })
+    
+    return {
+        "batch_results": results,
+        "total_files": len(files),
+        "successful_translations": len([r for r in results if r.get("success", False)]),
+        "failed_translations": len([r for r in results if not r.get("success", False)]),
+        "target_language": target_language
+    }
+
 @router.post("/translate-and-download-docx")
 async def translate_and_download_docx(
     file: UploadFile = File(...),
@@ -610,6 +721,55 @@ async def download_translated_pdf_simple(
     except Exception as e:
         logger.error(f"Error creating simple PDF: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error creating PDF document: {str(e)}")
+
+@router.post("/analyze-translation-quality")
+async def analyze_translation_quality(
+    original_text: str = Form(...),
+    translated_text: str = Form(...),
+    target_language: str = Form(...)
+):
+    """Analyze translation quality and provide confidence metrics"""
+    try:
+        # Simple quality metrics (can be enhanced with more sophisticated algorithms)
+        original_words = len(original_text.split())
+        translated_words = len(translated_text.split())
+        
+        # Length ratio analysis
+        length_ratio = translated_words / original_words if original_words > 0 else 0
+        length_score = 100 - abs(length_ratio - 1) * 50  # Penalize extreme length differences
+        
+        # Character diversity analysis
+        original_chars = set(original_text.lower())
+        translated_chars = set(translated_text.lower())
+        diversity_score = len(translated_chars) / len(original_chars) * 100 if len(original_chars) > 0 else 0
+        
+        # Simple completeness check
+        completeness_score = min(100, (len(translated_text.strip()) / len(original_text.strip())) * 100) if len(original_text.strip()) > 0 else 0
+        
+        # Overall confidence (weighted average)
+        confidence = (length_score * 0.3 + diversity_score * 0.3 + completeness_score * 0.4)
+        confidence = max(60, min(95, confidence))  # Clamp between 60-95%
+        
+        return {
+            "confidence": round(confidence, 1),
+            "metrics": {
+                "length_ratio": round(length_ratio, 2),
+                "length_score": round(length_score, 1),
+                "diversity_score": round(diversity_score, 1),
+                "completeness_score": round(completeness_score, 1),
+                "original_words": original_words,
+                "translated_words": translated_words
+            },
+            "recommendations": [
+                "Translation appears complete" if completeness_score > 80 else "Translation may be incomplete",
+                "Good length balance" if 0.7 <= length_ratio <= 1.5 else "Unusual length difference detected",
+                "High confidence translation" if confidence > 85 else "Consider manual review"
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error analyzing translation quality: {e}")
+        raise HTTPException(status_code=500, detail=f"Quality analysis failed: {e}")
 
 @router.post("/download-translated-word")
 async def download_translated_word(
