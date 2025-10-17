@@ -1,5 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { TranslationApiService, type PdfTranslationResponse } from '../services/translationApi';
+import PdfLivePreview from './PdfLivePreview';
+
+
 
 interface PdfUploadProps {
   onTranslationComplete?: (result: PdfTranslationResponse) => void;
@@ -12,6 +15,7 @@ const PdfUpload: React.FC<PdfUploadProps> = ({ onTranslationComplete }) => {
   const [result, setResult] = useState<PdfTranslationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showLivePreviewModal, setShowLivePreviewModal] = useState(false);
 
   const languages = {
     'asm_Beng': 'Assamese',
@@ -78,16 +82,44 @@ const PdfUpload: React.FC<PdfUploadProps> = ({ onTranslationComplete }) => {
   const handleDownloadPdf = async () => {
     if (!result || !selectedFile) return;
 
+    // --- ADDED CONSOLE.LOG STATEMENTS FOR DEBUGGING ---
+    console.log("Original Text Chunks:", result.original_text_chunks);
+    console.log("Translated Text Chunks:", result.translated_text_chunks);
+    console.log("Layout Data:", result.layout_data);
+    // --------------------------------------------------
+
     try {
       setIsLoading(true);
       await TranslationApiService.downloadTranslatedPdf(
-        result.extracted_text,
-        result.translated_text,
+        result.original_text_chunks, // Pass original text chunks
+        result.translated_text_chunks, // Pass translated text chunks
         result.filename,
-        result.target_language
+        result.target_language,
+        result.layout_data || [] // Pass layout data, defaulting to empty array if not present
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Download failed');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
+  const handleDownloadWord = async () => {
+    if (!result || !selectedFile) return;
+
+    try {
+      setIsLoading(true);
+      await TranslationApiService.downloadTranslatedWord(
+        result.original_text_chunks, // Pass original text chunks
+        result.translated_text_chunks, // Pass translated text chunks
+        result.filename,
+        result.target_language,
+        result.layout_data || [], // Pass layout data, defaulting to empty array if not present
+        result.target_language // Use target_language as language_code
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Word download failed');
     } finally {
       setIsLoading(false);
     }
@@ -199,16 +231,23 @@ const PdfUpload: React.FC<PdfUploadProps> = ({ onTranslationComplete }) => {
                   </p>
                 )}
               </div>
-              <button
-                onClick={handleDownloadPdf}
-                disabled={isLoading}
-                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span>{isLoading ? 'Generating...' : 'Download PDF'}</span>
-              </button>
+              {/* Download Buttons Section */}
+              <div className="flex gap-4">
+                <button
+                  onClick={handleDownloadPdf}
+                  disabled={isLoading}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isLoading ? 'Generating...' : 'Download PDF'}
+                </button>
+                <button
+                  onClick={handleDownloadWord}
+                  disabled={isLoading}
+                  className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isLoading ? 'Generating...' : 'Download Word'}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -246,6 +285,28 @@ const PdfUpload: React.FC<PdfUploadProps> = ({ onTranslationComplete }) => {
             </div>
           )}
         </div>
+      )}
+
+      {/* Live Preview Section */}
+      {selectedFile && (
+        <div className="mb-6">
+          <button
+            onClick={() => setShowLivePreviewModal(true)}
+            disabled={!selectedFile || isLoading}
+            className="w-full bg-purple-600 text-white py-3 px-4 rounded-md hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors mb-2"
+          >
+            Start Live Preview
+          </button>
+        </div>
+      )}
+
+      {/* Live Preview Modal */}
+      {showLivePreviewModal && selectedFile && (
+        <PdfLivePreview
+          file={selectedFile}
+          targetLanguage={targetLanguage}
+          onClose={() => setShowLivePreviewModal(false)}
+        />
       )}
     </div>
   );

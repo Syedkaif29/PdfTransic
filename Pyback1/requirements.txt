@@ -20,9 +20,18 @@ indic-nlp-library-itt
 # PDF processing
 PyPDF2
 pymupdf
-pillow
+
 pytesseract
+reportlab
+
+# Add these to your existing requirements.txt:
+python-docx
+pytest
+pytest-asyncio  # For testing async endpoints
 
 # Additional HuggingFace dependencies
 tokenizers
 huggingface-hub
+
+# Testing dependencies
+psutil  # For memory usage monitoring in performance tests
