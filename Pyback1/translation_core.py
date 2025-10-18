@@ -2,7 +2,7 @@ import io
 import os
 import logging
 from typing import List, Tuple, Dict, Any, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 import torch
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 from IndicTransToolkit.processor import IndicProcessor

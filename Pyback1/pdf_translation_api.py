@@ -4,8 +4,9 @@ from typing import List, Dict, Any, AsyncGenerator
 import json
 import io
 import logging
+from dataclasses import asdict
 from font_management import get_language_mapper
-from translation_core import extract_text_from_pdf, create_pdf_from_text, chunk_text, remove_duplicates_from_text, ip, tokenizer, model, DEVICE
+from translation_core import extract_text_from_pdf, create_pdf_from_text, chunk_text, remove_duplicates_from_text, ip, tokenizer, model, DEVICE, PdfLayoutData
 import torch
 from docx import Document
 from docx.shared import Pt, RGBColor
@@ -49,7 +50,7 @@ async def translate_pdf_enhanced(
         
         # Translate chunks in batches
         all_translations = []
-        batch_size = 10
+        batch_size = 19
         
         for i in range(0, len(text_chunks), batch_size):
             batch = text_chunks[i:i+batch_size]
@@ -108,7 +109,7 @@ async def translate_pdf_enhanced(
             "layout_data_available": bool(layout_data),
             "original_text_chunks": text_chunks,
             "translated_text_chunks": all_translations,
-            "layout_data": layout_data
+            "layout_data": [asdict(p) for p in layout_data] if layout_data else []
         }
         
     except HTTPException:
@@ -146,7 +147,7 @@ async def translate_and_download_pdf(
                 seen.add(t)
             else:
                 element_indices.append(None)
-        batch_size = 10
+        batch_size = 19
         translated_texts = []
         for i in range(0, len(element_texts), batch_size):
             batch = element_texts[i:i+batch_size]
@@ -261,7 +262,7 @@ async def translate_pdf_live_preview(
         }
         yield f"data: {json.dumps(layout_info_event)}\n\n"
         
-        batch_size = 5
+        batch_size = 19
         trans_idx = 0
         total_elements = len(element_texts)
         
@@ -387,7 +388,7 @@ async def translate_batch(
             text_chunks = chunk_text(cleaned_text, max_chunk_size=300)  # Smaller chunks for batch
             
             all_translations = []
-            batch_size = 5
+            batch_size = 19
             
             for j in range(0, len(text_chunks), batch_size):
                 batch = text_chunks[j:j+batch_size]
@@ -486,7 +487,7 @@ async def translate_and_download_docx(
                 seen.add(t)
             else:
                 element_indices.append(None)
-        batch_size = 10
+        batch_size = 19
         translated_texts = []
         for i in range(0, len(element_texts), batch_size):
             batch = element_texts[i:i+batch_size]
@@ -582,13 +583,23 @@ async def download_translated_pdf(
         # Parse the JSON data
         original_text_chunks = json.loads(original_text_chunks_json)
         translated_text_chunks = json.loads(translated_text_chunks_json)
-        layout_data = json.loads(layout_data_json)
+        layout_data_dicts = json.loads(layout_data_json)
         
         logger.info(f"Parsed data: {len(translated_text_chunks)} translated chunks")
         
         # Validate data
         if not translated_text_chunks:
             raise HTTPException(status_code=422, detail="No translated text chunks provided")
+        
+        # Convert layout_data dictionaries back to PdfLayoutData objects
+        layout_data = None
+        if layout_data_dicts:
+            try:
+                layout_data = [PdfLayoutData(**item) for item in layout_data_dicts]
+                logger.info(f"Converted {len(layout_data)} layout data objects")
+            except Exception as e:
+                logger.warning(f"Failed to convert layout data: {e}. Proceeding without layout.")
+                layout_data = None
         
         # Create PDF using the existing create_pdf_from_text function
         pdf_buffer = create_pdf_from_text(

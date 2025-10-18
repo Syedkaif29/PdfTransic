@@ -22,7 +22,7 @@ from fastapi.responses import StreamingResponse
 from font_management import initialize_font_system, get_font_registry, get_language_mapper, get_style_factory
 from typing import AsyncGenerator
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 import json
 from pdf_translation_api import router as pdf_translation_router
 from pdf_simple_service import router as pdf_simple_router
@@ -627,13 +627,13 @@ async def translate_pdf(
         
         # Use same batch size as Live Preview
         all_translations = []
-        batch_size = 5  # Same as Live Preview
+        batch_size = 19  # Set for 25 batches
         
         # Simple optimized sequential processing (avoiding threading issues)
         logger.info(f"Processing {len(text_chunks)} chunks with optimized sequential batching")
         
         # Use larger batch size for better performance without threading complexity
-        optimized_batch_size = batch_size * 2  # Double the batch size for speed
+        optimized_batch_size = 19  # Set for 25 batches
         
         for i in range(0, len(text_chunks), optimized_batch_size):
             batch_chunks = text_chunks[i:i + optimized_batch_size]
@@ -1440,53 +1440,104 @@ def create_pdf_from_text(original_text_chunks: List[str], translated_text_chunks
             logger.info(f"✅ Successfully created PDF with layout preservation.")
 
         else:
-            # Canvas-based fallback if no layout data is provided
-            logger.warning("⚠️ No layout data provided, falling back to simple canvas rendering.")
-            c.setPageSize(A4) # Reset to default A4 if no layout data
+            # Canvas-based fallback if no layout data is provided - use paragraph formatting
+            logger.info("📄 Using paragraph-based PDF rendering")
+            c.setPageSize(A4)
             width, height = A4
             margin = 1 * inch
             y_position = height - margin
             line_height = 14
+            max_width = width - 2 * margin
 
-            c.setFont(get_current_font_name(False, False), 16)
-            c.drawString(margin, y_position, "PDF Translation Result (Simple Layout)")
+            # Helper function to wrap text
+            def wrap_text(text, font_name, font_size, max_width):
+                """Wrap text to fit within max_width"""
+                words = text.split()
+                lines = []
+                current_line = []
+                
+                for word in words:
+                    test_line = ' '.join(current_line + [word])
+                    if c.stringWidth(test_line, font_name, font_size) <= max_width:
+                        current_line.append(word)
+                    else:
+                        if current_line:
+                            lines.append(' '.join(current_line))
+                        current_line = [word]
+                
+                if current_line:
+                    lines.append(' '.join(current_line))
+                
+                return lines
+
+            # Title
+            c.setFont('Helvetica-Bold', 16)
+            c.drawString(margin, y_position, "PDF Translation Result")
             y_position -= 2 * line_height
 
-            c.setFont(get_current_font_name(False, False), 12)
+            # Metadata
+            c.setFont('Helvetica', 12)
             c.drawString(margin, y_position, f"Original File: {filename}")
             y_position -= line_height
             c.drawString(margin, y_position, f"Target Language: {target_language}")
             y_position -= 2 * line_height
 
-            c.setFont(get_current_font_name(True, False), 12) # Bold
+            # ===== ORIGINAL TEXT SECTION =====
+            c.setFont('Helvetica-Bold', 12)
             c.drawString(margin, y_position, "Original Text:")
             y_position -= line_height
-            c.setFont(get_current_font_name(False, False), 10)
-            for chunk in original_text_chunks:
-                for line in chunk.split('\n'):
-                    if y_position < margin:
-                        c.showPage()
-                        c.setPageSize(A4)
-                        y_position = height - margin
-                    c.drawString(margin, y_position, line.strip())
-                    y_position -= line_height
-            y_position -= line_height
+            
+            # Use Helvetica for English text
+            original_font = 'Helvetica'
+            c.setFont(original_font, 10)
+            
+            # Join all original chunks into one text
+            full_original = " ".join(original_text_chunks)
+            wrapped_original = wrap_text(full_original, original_font, 10, max_width)
+            
+            for line in wrapped_original:
+                if y_position < margin:
+                    c.showPage()
+                    c.setPageSize(A4)
+                    y_position = height - margin
+                    # IMPORTANT: Reset font after page break
+                    c.setFont(original_font, 10)
+                c.drawString(margin, y_position, line.strip())
+                y_position -= line_height
+            
+            y_position -= line_height  # Extra space between sections
 
-            c.setFont(get_current_font_name(True, False), 12) # Bold
+            # ===== TRANSLATED TEXT SECTION =====
+            # Check if we need a new page for the translated section header
+            if y_position < margin + (3 * line_height):
+                c.showPage()
+                c.setPageSize(A4)
+                y_position = height - margin
+            
+            c.setFont('Helvetica-Bold', 12)
             c.drawString(margin, y_position, "Translated Text:")
             y_position -= line_height
-            c.setFont(get_current_font_name(False, False), 10)
-            for chunk in translated_text_chunks:
-                for line in chunk.split('\n'):
-                    if y_position < margin:
-                        c.showPage()
-                        c.setPageSize(A4)
-                        y_position = height - margin
-                    c.drawString(margin, y_position, line.strip())
-                    y_position -= line_height
-            y_position -= line_height
+            
+            # Use the target language font for translated text
+            translated_font = get_current_font_name(False, False)
+            c.setFont(translated_font, 10)
+            
+            # Join all translated chunks into one text
+            full_translated = " ".join(translated_text_chunks)
+            wrapped_translated = wrap_text(full_translated, translated_font, 10, max_width)
+            
+            for line in wrapped_translated:
+                if y_position < margin:
+                    c.showPage()
+                    c.setPageSize(A4)
+                    y_position = height - margin
+                    # IMPORTANT: Reset font after page break
+                    c.setFont(translated_font, 10)
+                c.drawString(margin, y_position, line.strip())
+                y_position -= line_height
+            
             c.showPage()
-            logger.info(f"✅ Successfully created PDF with simple canvas rendering.")
+            logger.info(f"✅ Successfully created PDF with both original and translated text.")
             
         c.save()
         buffer.seek(0)
@@ -1616,28 +1667,83 @@ async def translate_pdf_enhanced(
         extracted_text, extraction_method, layout_data = extract_text_from_pdf(pdf_content, max_pages=2)
         logger.info(f"Text extracted using: {extraction_method}")
         
-        # If layout_data is available, translate each text element individually
+        # If layout_data is available, use paragraph-based translation for better formatting
         if layout_data and any(p.text_elements for p in layout_data):
+            logger.info("Using paragraph-based translation for better formatting")
+            
+            # Group text elements into paragraphs based on Y-position proximity
             all_elements = []
             for page in layout_data:
                 all_elements.extend(page.text_elements)
-            # Remove empty/duplicate texts
-            seen = set()
-            element_texts = []
-            element_indices = []
-            for idx, el in enumerate(all_elements):
-                t = el.text.strip()
-                if t and t not in seen:
-                    element_texts.append(t)
-                    element_indices.append(idx)
-                    seen.add(t)
+            
+            # Group elements into lines based on Y-coordinate proximity
+            lines = []
+            current_line = []
+            current_y = None
+            y_threshold = 5  # pixels - elements within this distance are on the same line
+            
+            for el in all_elements:
+                if not el.text.strip():
+                    continue
+                    
+                el_y = el.bbox[1]  # Y-coordinate
+                
+                if current_y is None or abs(el_y - current_y) <= y_threshold:
+                    # Same line
+                    current_line.append(el)
+                    current_y = el_y
                 else:
-                    element_indices.append(None)  # Mark as duplicate/empty
-            # Translate in optimized batches
-            batch_size = 10  # Proven optimal size for element-wise processing
-            translated_texts = []
-            for i in range(0, len(element_texts), batch_size):
-                batch = element_texts[i:i+batch_size]
+                    # New line
+                    if current_line:
+                        lines.append(current_line)
+                    current_line = [el]
+                    current_y = el_y
+            
+            # Add the last line
+            if current_line:
+                lines.append(current_line)
+            
+            # Group lines into paragraphs based on vertical spacing
+            paragraphs = []
+            current_paragraph = []
+            prev_y = None
+            paragraph_threshold = 15  # pixels - larger gap indicates new paragraph
+            
+            for line in lines:
+                if not line:
+                    continue
+                    
+                line_y = line[0].bbox[1]
+                
+                if prev_y is None or abs(line_y - prev_y) <= paragraph_threshold:
+                    # Same paragraph
+                    current_paragraph.extend(line)
+                else:
+                    # New paragraph
+                    if current_paragraph:
+                        paragraphs.append(current_paragraph)
+                    current_paragraph = line
+                
+                prev_y = line_y
+            
+            # Add the last paragraph
+            if current_paragraph:
+                paragraphs.append(current_paragraph)
+            
+            logger.info(f"Grouped {len(all_elements)} elements into {len(paragraphs)} paragraphs")
+            
+            # Translate each paragraph as a whole
+            paragraph_texts = []
+            for para in paragraphs:
+                para_text = " ".join([el.text.strip() for el in para if el.text.strip()])
+                paragraph_texts.append(para_text)
+            
+            # Translate paragraphs in batches
+            batch_size = 5  # Smaller batch for longer paragraphs
+            translated_paragraphs = []
+            
+            for i in range(0, len(paragraph_texts), batch_size):
+                batch = paragraph_texts[i:i+batch_size]
                 try:
                     pre = ip.preprocess_batch(batch, src_lang="eng_Latn", tgt_lang=target_language)
                     inputs = tokenizer(
@@ -1646,7 +1752,7 @@ async def translate_pdf_enhanced(
                         padding="longest",
                         return_tensors="pt",
                         return_attention_mask=True,
-                        max_length=512,  # Standard input length
+                        max_length=512,
                     ).to(DEVICE)
                     with torch.no_grad():
                         generated_tokens = model.generate(
@@ -1654,11 +1760,10 @@ async def translate_pdf_enhanced(
                             attention_mask=inputs["attention_mask"],
                             use_cache=False,
                             min_length=0,
-                            max_length=200,  # Balanced for quality vs speed
-                            num_beams=3,     # Keep quality with reasonable speed
+                            max_length=256,
+                            num_beams=3,
                             num_return_sequences=1,
                             do_sample=False,
-                            early_stopping=True,  # Stop early when possible
                         )
                     decoded = tokenizer.batch_decode(
                         generated_tokens.detach().cpu().tolist(),
@@ -1666,42 +1771,36 @@ async def translate_pdf_enhanced(
                         clean_up_tokenization_spaces=True,
                     )
                     batch_trans = ip.postprocess_batch(decoded, lang=target_language)
-                    translated_texts.extend(batch_trans)
+                    translated_paragraphs.extend(batch_trans)
                 except Exception as batch_error:
-                    logger.error(f"Error translating element batch: {batch_error}")
-                    translated_texts.extend(["[Translation failed]"] * len(batch))
-            # Map translations back to all_elements order
-            translated_elements = []
-            trans_idx = 0
-            for idx in element_indices:
-                if idx is not None:
-                    translated_elements.append(translated_texts[trans_idx])
-                    trans_idx += 1
-                else:
-                    translated_elements.append("")
-            # For download and PDF generation, pass these lists
+                    logger.error(f"Error translating paragraph batch: {batch_error}")
+                    translated_paragraphs.extend(["[Translation failed]"] * len(batch))
+            
+            # Join translated paragraphs
+            translated_text = "\n\n".join(translated_paragraphs)
+            
             return {
                 "success": True,
                 "filename": file.filename,
                 "pages_processed": len(layout_data),
                 "extracted_text": extracted_text,
-                "translated_text": " ".join(translated_elements),
+                "translated_text": translated_text,
                 "target_language": target_language,
                 "source_language": "eng_Latn",
                 "language_code": target_language,
                 "extraction_method": extraction_method,
                 "text_length": len(extracted_text),
-                "chunks_processed": len(translated_elements),
-                "memory_management": "element-wise",
+                "chunks_processed": len(paragraph_texts),
+                "memory_management": "paragraph-based",
                 "duplicates_removed": True,
                 "download_available": True,
                 "layout_data_available": True,
                 "font_support": {
                     "enabled": font_system_initialized,
                 },
-                "original_text_elements": [el.text for el in all_elements],
-                "translated_text_elements": translated_elements,
-                "layout_data": [p.dict() for p in layout_data] if layout_data else []
+                "original_text_chunks": paragraph_texts,
+                "translated_text_chunks": translated_paragraphs,
+                "layout_data": []  # Don't use element-level layout for paragraph-based translation
             }
         # Fallback: old chunk-based translation
         # ... existing code ...
@@ -1721,13 +1820,13 @@ async def translate_pdf_enhanced(
         
         # Translate words in small batches (proven optimal from Live Preview)
         all_translations = []
-        batch_size = 5  # Proven optimal size from Live Preview
+        batch_size = 19  # Set for 25 batches
         
         # Simple optimized sequential processing (avoiding threading issues)
         logger.info(f"Processing {len(text_chunks)} chunks with optimized sequential batching")
         
         # Use larger batch size for better performance without threading complexity
-        optimized_batch_size = batch_size * 2  # Double the batch size for speed
+        optimized_batch_size = 19  # Set for 25 batches
         
         for i in range(0, len(text_chunks), optimized_batch_size):
             batch_chunks = text_chunks[i:i + optimized_batch_size]
@@ -1821,7 +1920,7 @@ async def translate_pdf_enhanced(
             },
             "original_text_chunks": text_chunks,
             "translated_text_chunks": all_translations,
-            "layout_data": [p.dict() for p in layout_data] if layout_data else [] # Include layout data
+            "layout_data": [asdict(p) for p in layout_data] if layout_data else [] # Include layout data
         }
 
     except Exception as e:
