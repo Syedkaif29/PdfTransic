@@ -811,64 +811,50 @@ async def download_translated_word(
             section.right_margin = Pt(72)
         
         # Add title
-        title = doc.add_heading('Translated Document', 0)
+        title = doc.add_heading('Translation Document', 0)
         title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
         
-        # Add language info
-        lang_info = doc.add_paragraph(f'Translated to: {target_language}')
-        lang_info.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        # Add metadata
+        metadata = doc.add_paragraph()
+        metadata.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        run = metadata.add_run(f'Original File: {filename} | Target Language: {target_language}')
+        run.font.size = Pt(10)
         
         # Add separator
-        doc.add_paragraph('─' * 50)
+        doc.add_paragraph('─' * 70)
         
-        # Group text by paragraphs if layout data is available
-        if layout_data and len(layout_data) > 0:
-            # Group elements by paragraph
-            paragraph_groups = {}
-            for element in layout_data:
-                para_idx = element.get('paragraph_index', 0)
-                if para_idx not in paragraph_groups:
-                    paragraph_groups[para_idx] = []
-                paragraph_groups[para_idx].append(element)
-            
-            # Add content by paragraphs
-            for para_idx in sorted(paragraph_groups.keys()):
-                elements = paragraph_groups[para_idx]
-                if not elements:
-                    continue
-                
-                first_element = elements[0]
-                is_title = first_element.get('is_title', False)
-                is_heading = first_element.get('is_heading', False)
-                
-                # Create paragraph
-                if is_title:
-                    para = doc.add_heading('', level=1)
-                    para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-                elif is_heading:
-                    para = doc.add_heading('', level=2)
-                else:
-                    para = doc.add_paragraph()
-                
-                # Add translated text
-                translated_text = ' '.join([translated_text_chunks[i] for i in range(len(elements)) if i < len(translated_text_chunks)])
-                if translated_text.strip():
-                    run = para.add_run(translated_text)
-                    if is_title or is_heading:
-                        run.bold = True
-                        run.font.size = Pt(16 if is_heading else 20)
-                    else:
-                        run.font.size = Pt(12)
-                
-                # Add some spacing
-                if not is_title:
-                    doc.add_paragraph()
-        else:
-            # Fallback: add all translated text as one paragraph
-            all_translated = ' '.join(translated_text_chunks)
-            if all_translated.strip():
-                para = doc.add_paragraph(all_translated)
-                para.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+        # ===== ORIGINAL TEXT SECTION =====
+        original_heading = doc.add_heading('Original Text:', level=1)
+        original_heading.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+        
+        # Join all original chunks
+        full_original = ' '.join(original_text_chunks)
+        if full_original.strip():
+            original_para = doc.add_paragraph(full_original)
+            original_para.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+            # Set font for original text
+            for run in original_para.runs:
+                run.font.name = 'Calibri'
+                run.font.size = Pt(11)
+        
+        # Add spacing between sections
+        doc.add_paragraph()
+        
+        # Add separator
+        doc.add_paragraph('─' * 70)
+        
+        # ===== TRANSLATED TEXT SECTION =====
+        translated_heading = doc.add_heading('Translated Text:', level=1)
+        translated_heading.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+        
+        # Join all translated chunks
+        full_translated = ' '.join(translated_text_chunks)
+        if full_translated.strip():
+            translated_para = doc.add_paragraph(full_translated)
+            translated_para.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+            # Set font for translated text (will use system font for Hindi/Urdu/etc.)
+            for run in translated_para.runs:
+                run.font.size = Pt(11)
         
         # Save to BytesIO
         doc_buffer = io.BytesIO()

@@ -433,55 +433,71 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-7xl w-full max-h-[95vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-7xl w-full max-h-[95vh] overflow-hidden flex flex-col border border-gray-100">
         {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b">
-          <h2 className="text-xl font-bold text-gray-800">
+        <div className="flex justify-between items-center p-6 bg-gradient-to-r from-blue-600 to-purple-600">
+          <h2 className="text-2xl font-bold text-white flex items-center">
+            <svg className="w-7 h-7 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
             Live PDF Translation Preview
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 text-2xl"
+            className="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition-all duration-200"
           >
-            ×
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 p-6 overflow-auto">
+        <div className="flex-1 p-6 overflow-auto bg-gradient-to-b from-gray-50 to-white">
           {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-              {error}
+            <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-6 py-4 rounded-lg mb-6 shadow-sm">
+              <div className="flex items-center">
+                <svg className="w-5 h-5 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+                <span className="font-medium">{error}</span>
+              </div>
             </div>
           )}
 
           {/* Progress Bar */}
-          <div className="mb-6">
-            <div className="flex justify-between items-center mb-3">
-              <span className="text-lg font-semibold text-gray-800">
+          <div className="mb-8 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <div className="flex justify-between items-center mb-4">
+              <span className="text-lg font-semibold text-gray-800 flex items-center">
+                <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
                 Translation Progress
               </span>
-              <span className="text-lg font-bold text-blue-600">
+              <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                 {Math.round(progress)}%
               </span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-3">
+            <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden shadow-inner">
               <div
-                className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-500"
+                className="bg-gradient-to-r from-blue-500 via-purple-500 to-blue-600 h-4 rounded-full transition-all duration-500 shadow-lg"
                 style={{ width: `${progress}%` }}
               ></div>
             </div>
             {layoutData.length > 0 && (
-              <div className="text-sm text-gray-600 mt-2">
+              <div className="text-sm text-gray-600 mt-3 flex items-center">
+                <svg className="w-4 h-4 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
                 Processing {layoutData.length} text elements from document
               </div>
             )}
           </div>
 
           {/* PDF Preview Canvas */}
-          <div className="flex justify-center mb-6">
-            <div className="border-2 border-gray-300 rounded-lg overflow-auto shadow-xl max-h-[500px] bg-white">
+          <div className="flex justify-center mb-8">
+            <div className="rounded-2xl overflow-auto shadow-2xl max-h-[500px] bg-white border border-gray-200">
               <canvas
                 ref={canvasRef}
                 width={700}
@@ -492,13 +508,16 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
           </div>
 
           {/* Translation Status */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            <div className="bg-gray-50 p-5 rounded-lg border">
-              <h3 className="font-semibold text-gray-800 mb-3 text-lg">Original Text</h3>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+              <h3 className="font-semibold text-gray-800 mb-4 text-lg flex items-center">
+                <div className="w-2 h-2 bg-gray-400 rounded-full mr-3"></div>
+                Original Text
+              </h3>
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
                 {layoutData.map((element, index) => (
-                  <div key={index} className="text-sm text-gray-600 flex items-start">
-                    <span className="font-mono text-xs bg-gray-200 px-2 py-1 rounded mr-2 flex-shrink-0">
+                  <div key={index} className="text-sm text-gray-700 flex items-start bg-gray-50 p-3 rounded-lg hover:bg-gray-100 transition-colors">
+                    <span className="font-mono text-xs bg-gradient-to-r from-gray-400 to-gray-500 text-white px-2 py-1 rounded-md mr-3 flex-shrink-0 shadow-sm">
                       {index}
                     </span>
                     <span className="break-words">{element.text}</span>
@@ -507,12 +526,15 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
               </div>
             </div>
 
-            <div className="bg-green-50 p-5 rounded-lg border">
-              <h3 className="font-semibold text-gray-800 mb-3 text-lg">Translated Text</h3>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-green-200">
+              <h3 className="font-semibold text-gray-800 mb-4 text-lg flex items-center">
+                <div className="w-2 h-2 bg-green-500 rounded-full mr-3 animate-pulse"></div>
+                Translated Text
+              </h3>
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
                 {Array.from(translatedElements.entries()).map(([index, text]) => (
-                  <div key={index} className="text-sm text-green-700 flex items-start">
-                    <span className="font-mono text-xs bg-green-200 px-2 py-1 rounded mr-2 flex-shrink-0">
+                  <div key={index} className="text-sm text-green-800 flex items-start bg-green-50 p-3 rounded-lg hover:bg-green-100 transition-colors">
+                    <span className="font-mono text-xs bg-gradient-to-r from-green-500 to-green-600 text-white px-2 py-1 rounded-md mr-3 flex-shrink-0 shadow-sm">
                       {index}
                     </span>
                     <span className="break-words">{text}</span>
@@ -524,32 +546,34 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
 
           {/* Download Section */}
           {isComplete && (
-            <div className="bg-gradient-to-r from-green-50 to-blue-50 p-6 rounded-lg border-2 border-green-200 mb-6">
+            <div className="bg-gradient-to-br from-green-50 via-blue-50 to-purple-50 p-8 rounded-2xl shadow-lg mb-6 border border-green-200">
               <div className="text-center">
-                <div className="flex items-center justify-center mb-4">
-                  <div className="bg-green-100 p-3 rounded-full mr-3">
-                    <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                <div className="flex items-center justify-center mb-6">
+                  <div className="bg-gradient-to-r from-green-400 to-green-600 p-4 rounded-full mr-4 shadow-lg animate-bounce">
+                    <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                     </svg>
                   </div>
-                  <h3 className="text-2xl font-bold text-gray-800">Translation Complete!</h3>
+                  <h3 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
+                    Translation Complete!
+                  </h3>
                 </div>
-                <p className="text-gray-600 mb-6">Your document has been successfully translated. Download it in your preferred format:</p>
+                <p className="text-gray-700 mb-8 text-lg">Your document has been successfully translated. Download it in your preferred format:</p>
 
-                <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <div className="flex flex-col sm:flex-row gap-5 justify-center">
                   <button
                     onClick={handleDownloadPDF}
                     disabled={isDownloading}
-                    className="flex items-center justify-center px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400 transition-colors font-semibold"
+                    className="flex items-center justify-center px-8 py-4 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-xl hover:from-red-600 hover:to-red-700 disabled:from-gray-400 disabled:to-gray-500 transition-all duration-200 font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
                   >
                     {isDownloading ? (
                       <>
-                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
                         Downloading...
                       </>
                     ) : (
                       <>
-                        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
                         Download PDF
@@ -560,16 +584,16 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
                   <button
                     onClick={handleDownloadWord}
                     disabled={isDownloading}
-                    className="flex items-center justify-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors font-semibold"
+                    className="flex items-center justify-center px-8 py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 disabled:from-gray-400 disabled:to-gray-500 transition-all duration-200 font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
                   >
                     {isDownloading ? (
                       <>
-                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
                         Downloading...
                       </>
                     ) : (
                       <>
-                        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
                         Download Word
@@ -583,17 +607,37 @@ const PdfLivePreview: React.FC<PdfLivePreviewProps> = ({ file, targetLanguage, o
 
           {/* Status */}
           {!isComplete && (
-            <div className="text-center">
+            <div className="text-center bg-white p-6 rounded-xl shadow-sm border border-gray-100">
               {isStreaming && (
-                <div className="flex items-center justify-center space-x-3">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-                  <span className="text-lg text-gray-600 font-medium">Translating document...</span>
+                <div className="flex items-center justify-center space-x-4">
+                  <div className="relative">
+                    <div className="animate-spin rounded-full h-8 w-8 border-4 border-blue-200"></div>
+                    <div className="animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent absolute top-0 left-0"></div>
+                  </div>
+                  <span className="text-lg text-gray-700 font-medium">Translating document...</span>
                 </div>
               )}
             </div>
           )}
         </div>
       </div>
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #f1f1f1;
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: linear-gradient(to bottom, #3b82f6, #8b5cf6);
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: linear-gradient(to bottom, #2563eb, #7c3aed);
+        }
+      `}</style>
     </div>
   );
 };
