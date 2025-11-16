@@ -152,6 +152,60 @@ PDFTransic supports translation from English to the following Indian languages u
 - **Storage**: 2GB+ free space (for models)
 - **OS**: Windows, macOS, or Linux
 
+##ER Diagram
+erDiagram
+
+    USER ||--o{ SESSION : creates
+    USER ||--o{ TRANSLATION : saves
+
+    SESSION {
+        int session_id PK
+        int user_id FK
+        string mode
+        datetime created_at
+    }
+
+    USER {
+        int user_id PK
+        string name
+        string email
+        string password_hash
+        datetime created_at
+    }
+
+    TRANSLATION {
+        int translation_id PK
+        int user_id FK
+        string type
+        string source_language
+        string target_language
+        text input_text
+        text translated_text
+        string original_file_url
+        string translated_pdf_url
+        string translated_word_url
+        datetime created_at
+    }
+
+    LOGIN_SIGNUP {
+        string action
+    }
+
+    TRANSLATION_PROCESS {
+        string step
+    }
+
+    HISTORY {
+        string view
+    }
+
+    LOGIN_SIGNUP ||--|| SESSION : creates
+    SESSION ||--o{ TRANSLATION_PROCESS : performs
+    TRANSLATION_PROCESS ||--o{ TRANSLATION : generates
+    USER ||--o{ HISTORY : views
+    HISTORY ||--o{ TRANSLATION : fetches
+
+
 ## ⚠️ Important Notes
 
 - **First Startup**: Model loading may take 3-5 minutes on first startup
