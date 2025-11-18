@@ -155,55 +155,49 @@ PDFTransic supports translation from English to the following Indian languages u
 ##ER Diagram
 
 ```mermaid
-    USER ||--o{ SESSION : creates
-    USER ||--o{ TRANSLATION : saves
 
-    SESSION {
-        int session_id PK
-        int user_id FK
-        string mode
-        datetime created_at
-    }
+    User ||--o{ Session : has
+    User ||--o{ Translation : saves
+    Session ||--o{ Translation : performs
+    User ||--o{ History : views
+    History ||--|| Translation : refers
 
-    USER {
-        int user_id PK
+    User {
+        int id PK
         string name
         string email
-        string password_hash
-        datetime created_at
+        string passwordHash
+        datetime createdAt
     }
 
-    TRANSLATION {
-        int translation_id PK
-        int user_id FK
+    Session {
+        int id PK
+        int userId FK
+        string mode
+        datetime createdAt
+    }
+
+    Translation {
+        int id PK
+        int userId FK
         string type
-        string source_language
-        string target_language
-        text input_text
-        text translated_text
-        string original_file_url
-        string translated_pdf_url
-        string translated_word_url
-        datetime created_at
+        string sourceLanguage
+        string targetLanguage
+        text inputText
+        text translatedText
+        string originalFile
+        string translatedPdfFile
+        string translatedWordFile
+        datetime createdAt
     }
 
-    LOGIN_SIGNUP {
-        string action
+    History {
+        int id PK
+        int translationId FK
+        int userId FK
+        datetime viewedAt
     }
 
-    TRANSLATION_PROCESS {
-        string step
-    }
-
-    HISTORY {
-        string view
-    }
-
-    LOGIN_SIGNUP ||--|| SESSION : creates
-    SESSION ||--o{ TRANSLATION_PROCESS : performs
-    TRANSLATION_PROCESS ||--o{ TRANSLATION : generates
-    USER ||--o{ HISTORY : views
-    HISTORY ||--o{ TRANSLATION : fetches
 ```
 
 
