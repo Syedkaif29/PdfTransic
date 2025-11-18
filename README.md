@@ -153,8 +153,8 @@ PDFTransic supports translation from English to the following Indian languages u
 - **OS**: Windows, macOS, or Linux
 
 ##ER Diagram
-erDiagram
 
+```mermaid
     USER ||--o{ SESSION : creates
     USER ||--o{ TRANSLATION : saves
 
@@ -204,6 +204,7 @@ erDiagram
     TRANSLATION_PROCESS ||--o{ TRANSLATION : generates
     USER ||--o{ HISTORY : views
     HISTORY ||--o{ TRANSLATION : fetches
+```
 
 
 ## ⚠️ Important Notes
