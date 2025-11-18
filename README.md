@@ -157,47 +157,65 @@ PDFTransic supports translation from English to the following Indian languages u
 ```mermaid
 erDiagram
 
-    User ||--o{ Session : has
-    User ||--o{ Translation : saves
-    Session ||--o{ Translation : performs
-    User ||--o{ History : views
-    History ||--|| Translation : refers
+    USER ||--o{ SESSION : creates
+    USER ||--o{ TRANSLATION : saves
+    LOGIN_SIGNUP ||--|| SESSION : creates
+    SESSION ||--o{ TRANSLATION_PROCESS : performs
+    TRANSLATION_PROCESS ||--o{ TRANSLATION : generates
+    USER ||--o{ HISTORY : views
+    HISTORY ||--o{ TRANSLATION : fetches
 
-    User {
-        int id PK
+    USER {
+        int user_id PK
         string name
         string email
-        string passwordHash
-        datetime createdAt
+        string password_hash
+        datetime created_at
     }
 
-    Session {
-        int id PK
-        int userId FK
+    SESSION {
+        int session_id PK
+        int user_id FK
         string mode
-        datetime createdAt
+        datetime created_at
     }
 
-    Translation {
-        int id PK
-        int userId FK
+    TRANSLATION {
+        int translation_id PK
+        int user_id FK
         string type
-        string sourceLanguage
-        string targetLanguage
-        text inputText
-        text translatedText
-        string originalFile
-        string translatedPdfFile
-        string translatedWordFile
-        datetime createdAt
+        string source_language
+        string target_language
+        text input_text
+        text translated_text
+        string original_file_url
+        string translated_pdf_url
+        string translated_word_url
+        datetime created_at
     }
 
-    History {
+    LOGIN_SIGNUP {
         int id PK
-        int translationId FK
-        int userId FK
-        datetime viewedAt
+        string action
+        datetime timestamp
     }
+
+    TRANSLATION_PROCESS {
+        int process_id PK
+        int session_id FK
+        string step
+        datetime started_at
+        datetime completed_at
+    }
+
+    HISTORY {
+        int history_id PK
+        int user_id FK
+        int translation_id FK
+        string view
+        datetime viewed_at
+    }
+
 
 
 ```
