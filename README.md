@@ -155,6 +155,7 @@ PDFTransic supports translation from English to the following Indian languages u
 ##ER Diagram
 
 ```mermaid
+erDiagram
 
     User ||--o{ Session : has
     User ||--o{ Translation : saves
@@ -197,6 +198,7 @@ PDFTransic supports translation from English to the following Indian languages u
         int userId FK
         datetime viewedAt
     }
+
 
 ```
 
